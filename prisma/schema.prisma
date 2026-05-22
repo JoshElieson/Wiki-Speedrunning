@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RunStatus {
+  COMPLETED
+  ABANDONED
+  DISQUALIFIED
+}
+
+enum RoomStatus {
+  WAITING
+  COUNTDOWN
+  ACTIVE
+  FINISHED
+  CANCELLED
+}
+
+enum ParticipantStatus {
+  JOINED
+  READY
+  RACING
+  FINISHED
+  LEFT
+}
+
+model User {
+  id             String            @id @default(cuid())
+  username       String            @unique
+  email          String?           @unique
+  displayName    String?
+  avatarUrl      String?
+  bio            String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  runs           Run[]
+  leaderboard    LeaderboardEntry[]
+  ratings        RatingRecord[]
+  roomEntries    RaceParticipant[]
+
+  @@index([createdAt])
+}
+
+model Article {
+  id               String    @id @default(cuid())
+  title            String
+  normalizedTitle  String    @unique
+  wikipediaPageId  Int?
+  url              String
+  summary          String?
+  isDisambiguation Boolean   @default(false)
+  linkCount        Int       @default(0)
+  pageViews30d     Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  challengeStarts  Challenge[] @relation("ChallengeStart")
+  challengeTargets Challenge[] @relation("ChallengeTarget")
+  runStepsFrom     RunStep[]   @relation("RunStepFrom")
+  runStepsTo       RunStep[]   @relation("RunStepTo")
+
+  @@index([title])
+  @@index([updatedAt])
+}
+
+model Challenge {
+  id                String         @id @default(cuid())
+  slug              String         @unique
+  label             String
+  description       String?
+  startArticleId    String
+  targetArticleId   String
+  difficultyScore   Float
+  shortestPathHint  Int?
+  isActive          Boolean        @default(true)
+  seed              String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  startArticle      Article        @relation("ChallengeStart", fields: [startArticleId], references: [id])
+  targetArticle     Article        @relation("ChallengeTarget", fields: [targetArticleId], references: [id])
+  runs              Run[]
+  dailyChallenges   DailyChallenge[]
+  raceRooms         RaceRoom[]
+
+  @@index([isActive, updatedAt])
+  @@index([difficultyScore])
+}
+
+model DailyChallenge {
+  id            String    @id @default(cuid())
+  dateKey       String    @unique
+  challengeId   String
+  createdAt     DateTime  @default(now())
+
+  challenge     Challenge @relation(fields: [challengeId], references: [id])
+
+  @@index([challengeId])
+}
+
+model Run {
+  id                  String         @id @default(cuid())
+  userId              String
+  challengeId         String
+  status              RunStatus      @default(COMPLETED)
+  durationMs          Int
+  clickCount          Int
+  score               Int
+  antiCheatHash       String?
+  startedAt           DateTime
+  finishedAt          DateTime
+  createdAt           DateTime       @default(now())
+
+  user                User           @relation(fields: [userId], references: [id])
+  challenge           Challenge      @relation(fields: [challengeId], references: [id])
+  steps               RunStep[]
+  replayMetadata      ReplayMetadata?
+  raceFinishes        RaceParticipant[] @relation("RaceParticipantFinalRun")
+
+  @@index([challengeId, durationMs])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model RunStep {
+  id                  String    @id @default(cuid())
+  runId               String
+  sequence            Int
+  fromArticleId       String
+  toArticleId         String
+  linkText            String?
+  clickedAtOffsetMs   Int
+
+  run                 Run       @relation(fields: [runId], references: [id])
+  fromArticle         Article   @relation("RunStepFrom", fields: [fromArticleId], references: [id])
+  toArticle           Article   @relation("RunStepTo", fields: [toArticleId], references: [id])
+
+  @@unique([runId, sequence])
+  @@index([runId, sequence])
+  @@index([fromArticleId])
+  @@index([toArticleId])
+}
+
+model LeaderboardEntry {
+  id              String    @id @default(cuid())
+  scope           String
+  userId          String
+  rank            Int
+  rating          Int
+  bestTimeMs      Int?
+  bestScore       Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@unique([scope, userId])
+  @@index([scope, rank])
+}
+
+model ReplayMetadata {
+  id                String   @id @default(cuid())
+  runId             String   @unique
+  graphSnapshotUrl  String?
+  timelineJson      Json?
+  eventCount        Int      @default(0)
+
+  run               Run      @relation(fields: [runId], references: [id])
+}
+
+model RatingRecord {
+  id               String   @id @default(cuid())
+  userId           String
+  ratingBefore     Int
+  ratingAfter      Int
+  delta            Int
+  context          String
+  createdAt        DateTime @default(now())
+
+  user             User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model RaceRoom {
+  id                String            @id @default(cuid())
+  code              String            @unique
+  challengeId       String?
+  status            RoomStatus        @default(WAITING)
+  maxParticipants   Int               @default(8)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  challenge         Challenge?        @relation(fields: [challengeId], references: [id])
+  participants      RaceParticipant[]
+
+  @@index([status, updatedAt])
+}
+
+model RaceParticipant {
+  id                String             @id @default(cuid())
+  roomId            String
+  userId            String
+  status            ParticipantStatus  @default(JOINED)
+  joinedAt          DateTime           @default(now())
+  finishedAt        DateTime?
+  finalRunId        String?
+
+  room              RaceRoom           @relation(fields: [roomId], references: [id])
+  user              User               @relation(fields: [userId], references: [id])
+  finalRun          Run?               @relation("RaceParticipantFinalRun", fields: [finalRunId], references: [id])
+
+  @@unique([roomId, userId])
+  @@index([roomId, status])
+  @@index([userId, joinedAt])
+}

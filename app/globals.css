@@ -1,26 +1,84 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f5ef;
+  --foreground: #1f2933;
+  --muted: #5f6b7a;
+  --surface: #ffffff;
+  --surface-elevated: #fbfaf6;
+  --surface-soft: #f2ede2;
+  --border: #d8d2c4;
+  --border-strong: #c8c0af;
+  --accent: #2f5d8c;
+  --accent-strong: #23496d;
+  --accent-soft: #eaf1fb;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-soft: 0 6px 18px rgba(31, 41, 51, 0.08);
+  --shadow-lifted: 0 12px 30px rgba(31, 41, 51, 0.12);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  min-height: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background-image:
+    radial-gradient(circle at 8% -12%, rgba(47, 93, 140, 0.08), transparent 35%),
+    radial-gradient(circle at 95% 0%, rgba(83, 68, 47, 0.06), transparent 28%);
+}
+
+* {
+  border-color: var(--border);
+}
+
+a[href],
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label[for],
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: rgba(47, 93, 140, 0.24);
+  color: #132130;
+}
+
+.surface-glass {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.focus-ring {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(47, 93, 140, 0.3);
 }
