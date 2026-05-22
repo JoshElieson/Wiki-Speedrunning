@@ -4,13 +4,25 @@ import { motion } from "framer-motion";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ResultSummaryCard } from "@/components/presentation/result-summary-card";
-import { RoutePathChips } from "@/components/presentation/route-path-chips";
+import { RoutePathGraph } from "@/components/presentation/route-path-graph";
 import { StatCard } from "@/components/presentation/stat-card";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ErrorPanel, LoadingPanel } from "@/components/presentation/state-panel";
+import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/presentation/state-panel";
 import { fetchRunById } from "@/features/race/services/race-api";
 import { formatDuration } from "@/utils/format";
+
+function formatRunStatus(status: "COMPLETED" | "ABANDONED" | "DISQUALIFIED") {
+  if (status === "ABANDONED") {
+    return "Abandoned";
+  }
+  if (status === "DISQUALIFIED") {
+    return "Disqualified";
+  }
+  return "Completed";
+}
+
+function formatEloDelta(delta: number) {
+  return `${delta > 0 ? "+" : ""}${delta}`;
+}
 
 export default function RunResultPage() {
   const params = useParams<{ id: string }>();
@@ -19,6 +31,7 @@ export default function RunResultPage() {
     queryFn: () => fetchRunById(params.id),
   });
   const run = runQuery.data;
+  const routeLength = run?.routePath.nodes.length ?? run?.steps.length ?? run?.route.length ?? 0;
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-10">
@@ -32,37 +45,36 @@ export default function RunResultPage() {
 
       {run ? (
         <>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Time" value={formatDuration(run.finalElapsedMs)} hint={`${routeLength} route nodes`} delay={0.03} />
+            <StatCard label="Clicks" value={`${run.clickCount}`} hint={`Final score ${run.score}`} delay={0.06} />
+            <StatCard label="Date" value={new Date(run.completedAt).toLocaleDateString()} hint={new Date(run.completedAt).toLocaleTimeString()} delay={0.09} />
+            <StatCard
+              label="ELO Change"
+              value={formatEloDelta(run.eloDelta)}
+              hint={run.eloDelta < 0 ? "Penalty applied" : run.eloDelta > 0 ? "Rating gain applied" : "No rating change"}
+              delay={0.12}
+            />
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
             <StatCard label="Challenge" value={run.challengeLabel} hint={`${run.startArticleTitle} to ${run.targetArticleTitle}`} delay={0.06} />
-            <StatCard label="Route Length" value={`${run.route.length} nodes`} hint="Recorded traversal" delay={0.12} />
+            <StatCard label="Route Length" value={`${routeLength} nodes`} hint="Recorded traversal" delay={0.12} />
             <StatCard
               label="Status"
-              value={run.status === "ABANDONED" ? "Abandoned" : run.status === "DISQUALIFIED" ? "Disqualified" : "Completed"}
+              value={formatRunStatus(run.status)}
               hint={new Date(run.completedAt).toLocaleString()}
               delay={0.18}
             />
           </div>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_1.4fr]">
-            <ResultSummaryCard durationMs={run.finalElapsedMs} clickCount={run.clickCount} score={run.score} routeLength={run.route.length} />
-
-            <Card className="p-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-[var(--foreground)]">Route Timeline</h2>
-                <Badge variant="neutral">Replay-ready</Badge>
-              </div>
-              <p className="mt-2 text-sm text-[var(--muted)]">Each step stores elapsed timing for future ghost race playback.</p>
-              <div className="mt-4">
-                <RoutePathChips path={run.route} />
-              </div>
-              <div className="mt-4 space-y-2">
-                {run.steps.map((step) => (
-                  <div key={`${step.stepIndex}-${step.articleTitle}`} className="text-sm text-[var(--muted)]">
-                    {step.stepIndex}. {step.articleTitle} - {formatDuration(step.elapsedMs)}
-                  </div>
-                ))}
-              </div>
-            </Card>
+            <ResultSummaryCard durationMs={run.finalElapsedMs} clickCount={run.clickCount} score={run.score} routeLength={routeLength} />
+            {run.steps.length > 0 ? (
+              <RoutePathGraph steps={run.steps} status={run.status} />
+            ) : (
+              <EmptyPanel title="Route Path unavailable" message="No step data was recorded for this run." />
+            )}
           </div>
         </>
       ) : null}

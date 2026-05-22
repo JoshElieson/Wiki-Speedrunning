@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { VarietyCategoryLogo } from "@/components/profile/variety-category-logo";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,7 @@ function StatCell({ label, value, className }: { label: string; value: string; c
 }
 
 export function RaceModeCard({ mode, onStart }: RaceModeCardProps) {
+  const router = useRouter();
   const theme = getRaceModeTheme(mode.id);
   const tierLabel = getRaceTierLabel(mode.rating);
   const tierProgress = getRaceTierProgress(mode.rating);
@@ -129,8 +131,10 @@ export function RaceModeCard({ mode, onStart }: RaceModeCardProps) {
               size="lg"
               disabled={!mode.enabled}
               className={cn(
-                "h-11 w-full sm:w-auto sm:min-w-[13.5rem]",
-                mode.enabled ? theme.accent.ctaEnabled : "border-[var(--border-strong)] bg-[var(--surface-elevated)] text-[var(--muted)]",
+                "group relative h-11 w-full overflow-hidden sm:w-auto sm:min-w-[13.5rem]",
+                mode.enabled
+                  ? theme.accent.ctaEnabled
+                  : "border-[var(--border-strong)] bg-[var(--surface-elevated)] text-[var(--muted)]",
               )}
               onClick={onStart}
             >
@@ -140,7 +144,16 @@ export function RaceModeCard({ mode, onStart }: RaceModeCardProps) {
                   Coming Soon
                 </span>
               ) : (
-                mode.ctaLabel
+                <>
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "absolute inset-y-0 left-0 z-0 w-0 transition-[width] duration-500 ease-out group-hover:w-full group-focus-visible:w-full",
+                      theme.accent.ctaFill,
+                    )}
+                  />
+                  <span className="relative z-10">{mode.ctaLabel}</span>
+                </>
               )}
             </Button>
             <p className="mt-2 text-xs text-[var(--muted)]">
@@ -153,7 +166,25 @@ export function RaceModeCard({ mode, onStart }: RaceModeCardProps) {
 
         <div className={cn("flex flex-col border-t border-[var(--border)] lg:border-t-0", theme.accent.statPanel)}>
           <StatCell label="Rating" value={`${mode.rating} ELO`} className="border-b border-[var(--border)]/70" />
-          <StatCell label="Runs" value={String(mode.runs)} className="border-b border-[var(--border)]/70" />
+          <div className="flex items-end justify-between gap-3 border-b border-[var(--border)]/70 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Runs</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums leading-none tracking-tight text-[var(--foreground)]">
+                {mode.runs}
+              </p>
+            </div>
+            {mode.enabled ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 px-2.5 text-[11px]"
+                onClick={() => router.push("/profile?tab=history#match-history")}
+              >
+                See run history
+              </Button>
+            ) : null}
+          </div>
           <StatCell
             label="Best time"
             value={mode.bestTime ? formatDuration(mode.bestTime) : "—"}

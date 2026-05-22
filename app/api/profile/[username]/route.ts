@@ -1,4 +1,3 @@
-import { getDummyProfileSnapshot } from "@/lib/dummy-players";
 import { DEFAULT_ELO } from "@/lib/elo";
 import {
   PROFILE_VARIETY_CATEGORIES,
@@ -19,17 +18,12 @@ export async function GET(_: Request, context: { params: Promise<{ username: str
       throw new ApiError(400, "INVALID_USERNAME", "Username is required");
     }
 
-    const dummyProfile = getDummyProfileSnapshot(username);
-    if (dummyProfile) {
-      return NextResponse.json(dummyProfile);
-    }
-
     const user = await getUserByUsername(username);
     if (!user) {
       throw new ApiError(404, "USER_NOT_FOUND", "User not found");
     }
 
-    const [runs, ratingRow, categoryRatingRows, totalRuns] = await Promise.all([
+    const [runs, ratingRow, categoryRatingRows, totalRuns, completedStats] = await Promise.all([
       getRunsForUserHistory(user.id, 100),
       prisma.leaderboardEntry.findFirst({
         where: { userId: user.id, scope: WIKIPEDIA_ELO_SCOPE },
@@ -40,12 +34,15 @@ export async function GET(_: Request, context: { params: Promise<{ username: str
         select: { scope: true, rating: true },
       }),
       prisma.run.count({ where: { userId: user.id } }),
+      prisma.run.aggregate({
+        where: { userId: user.id, status: "COMPLETED" },
+        _count: { _all: true },
+        _min: { durationMs: true },
+      }),
     ]);
 
     const categoryRatingsByScope = new Map(categoryRatingRows.map((row) => [row.scope, row.rating]));
-    const completedRuns = runs.filter((run) => run.status === "COMPLETED");
-    const bestTimeMs =
-      completedRuns.length > 0 ? Math.min(...completedRuns.map((run) => run.finalElapsedMs)) : 0;
+    const bestTimeMs = completedStats._min.durationMs ?? 0;
     const profile: ProfileSnapshot = {
       username: user.username,
       displayName: user.displayName ?? user.username,
@@ -58,7 +55,7 @@ export async function GET(_: Request, context: { params: Promise<{ username: str
       })),
       bestTimeMs,
       totalRuns,
-      wins: 0,
+      wins: completedStats._count._all,
       recentRuns: runs.map((run) => ({
         id: run.id,
         challengeLabel: run.challengeLabel,
@@ -66,6 +63,7 @@ export async function GET(_: Request, context: { params: Promise<{ username: str
         durationMs: run.finalElapsedMs,
         clickCount: run.clickCount,
         score: run.score,
+        eloDelta: run.eloDelta,
         difficultyScore: run.difficultyScore,
         route: run.route,
         createdAt: run.completedAt,

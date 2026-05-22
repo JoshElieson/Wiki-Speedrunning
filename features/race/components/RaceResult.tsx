@@ -1,19 +1,18 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatDuration } from "@/utils/format";
 import type { ChallengeDescriptor } from "@/types/domain";
 import type { RunDetail } from "@/server/types/run-history";
-import type { RouteNode } from "../types/race-state";
 
 interface RaceResultProps {
   open: boolean;
   challenge: ChallengeDescriptor;
   elapsedMs: number;
   clickCount: number;
-  route: RouteNode[];
   submittedRun?: RunDetail | null;
   isSubmitting: boolean;
   submitError: string | null;
@@ -25,7 +24,6 @@ export function RaceResult({
   challenge,
   elapsedMs,
   clickCount,
-  route,
   submittedRun,
   isSubmitting,
   submitError,
@@ -56,23 +54,16 @@ export function RaceResult({
                 <p>Target article: {challenge.targetTitle}</p>
                 <p>Difficulty score: {challenge.difficultyScore}</p>
                 <p>
-                  Leaderboard rank:{" "}
-                  {submittedRun ? <span className="text-[var(--foreground)]">Pending rank refresh</span> : "Not ranked yet"}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Full Route Path</p>
-                <div className="mt-2 flex max-h-36 flex-wrap gap-2 overflow-y-auto">
-                  {route.map((node, index) => (
-                    <span
-                      key={`${node.title}-${node.visitedAtOffsetMs}`}
-                      className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-elevated)] px-2 py-1 text-xs text-[var(--foreground)]"
-                    >
-                      {index + 1}. {node.title}
+                  ELO change:{" "}
+                  {submittedRun ? (
+                    <span className={submittedRun.eloDelta >= 0 ? "text-emerald-500" : "text-rose-500"}>
+                      {submittedRun.eloDelta > 0 ? "+" : ""}
+                      {submittedRun.eloDelta}
                     </span>
-                  ))}
-                </div>
+                  ) : (
+                    "Calculating..."
+                  )}
+                </p>
               </div>
 
               <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--muted)]">
@@ -80,6 +71,14 @@ export function RaceResult({
               </div>
 
               <div className="flex flex-wrap gap-2">
+                {submittedRun ? (
+                  <Link
+                    href={`/runs/${submittedRun.id}`}
+                    className="inline-flex h-10 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--foreground)] bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-[var(--surface)] shadow-[var(--shadow-soft)] transition-colors hover:bg-[#141c24] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  >
+                    View Route Path
+                  </Link>
+                ) : null}
                 <Button onClick={onRaceAgain}>Race again</Button>
               </div>
             </Card>

@@ -2,6 +2,31 @@ export type RunStatusValue = "COMPLETED" | "ABANDONED" | "DISQUALIFIED";
 
 export type RunStepKind = "start" | "intermediate" | "target";
 
+/**
+ * Ordered route node persisted in ReplayMetadata.timelineJson.
+ * elapsedMs is always relative to run start (0 for the first node).
+ */
+export interface RoutePathNode {
+  stepIndex: number;
+  articleTitle: string;
+  normalizedArticleTitle: string;
+  articleUrl?: string;
+  wikipediaPageId?: number;
+  elapsedMs: number;
+}
+
+/**
+ * Canonical route timeline payload stored in ReplayMetadata.timelineJson.
+ * {
+ *   version: "route_path_v1",
+ *   nodes: RoutePathNode[]
+ * }
+ */
+export interface RoutePathData {
+  version: "route_path_v1";
+  nodes: RoutePathNode[];
+}
+
 export interface RunStepDetail {
   stepIndex: number;
   articleTitle: string;
@@ -53,6 +78,7 @@ export interface RunHistoryItem {
   finalElapsedMs: number;
   clickCount: number;
   score: number;
+  eloDelta: number;
   difficultyScore: number;
   route: string[];
   completedAt: string;
@@ -64,6 +90,7 @@ export interface RunDetail extends RunHistoryItem {
   startArticleTitle: string;
   targetArticleTitle: string;
   steps: RunStepDetail[];
+  routePath: RoutePathData;
 }
 
 export interface MatchHistoryFilters {

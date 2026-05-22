@@ -49,6 +49,11 @@ type WikipediaQueryResponse = {
   query?: {
     pages?: Record<string, WikipediaPage>;
     redirects?: Array<{ from: string; to: string }>;
+    random?: Array<{ id?: number; ns?: number; title?: string }>;
+  };
+  continue?: {
+    rncontinue?: string;
+    continue?: string;
   };
   error?: {
     code: string;
@@ -347,4 +352,61 @@ export async function isValidOutgoingLink(currentTitle: string, candidateNextTit
   const normalizedNextTitleKey = toWikiTitleKey(candidateNextTitle);
   const outgoingLinks = await getOutgoingLinks(currentTitle);
   return outgoingLinks.some((link) => toWikiTitleKey(link.normalizedTitle) === normalizedNextTitleKey);
+}
+
+export async function fetchRandomArticleTitles(limit: number): Promise<string[]> {
+  const boundedLimit = Math.max(1, Math.floor(limit));
+  const titles: string[] = [];
+  const seen = new Set<string>();
+  let rncontinue: string | undefined;
+  let attempts = 0;
+
+  while (titles.length < boundedLimit && attempts < 40) {
+    attempts += 1;
+    const remaining = boundedLimit - titles.length;
+    const batchSize = Math.min(500, remaining);
+    const query = new URLSearchParams({
+      action: "query",
+      format: "json",
+      origin: "*",
+      list: "random",
+      rnnamespace: "0",
+      rnfilterredir: "nonredirects",
+      rnlimit: String(batchSize),
+    });
+
+    if (rncontinue) {
+      query.set("rncontinue", rncontinue);
+    }
+
+    const payload = await fetchWikipediaJson<WikipediaQueryResponse>(query);
+    const randomPages = payload.query?.random ?? [];
+    for (const page of randomPages) {
+      if (!page.title) {
+        continue;
+      }
+      const normalized = normalizeWikiTitle(page.title);
+      if (!isLikelyArticleTitle(normalized)) {
+        continue;
+      }
+      const key = toWikiTitleKey(normalized);
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      titles.push(normalized.replace(/_/g, " "));
+      if (titles.length >= boundedLimit) {
+        break;
+      }
+    }
+
+    const nextContinue = payload.continue?.rncontinue;
+    if (!nextContinue || nextContinue === rncontinue) {
+      break;
+    }
+    rncontinue = nextContinue;
+  }
+
+  return titles;
 }

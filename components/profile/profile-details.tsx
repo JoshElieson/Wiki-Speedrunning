@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { ErrorPanel, LoadingPanel } from "@/components/presentation/state-panel";
 import { StatCard } from "@/components/presentation/stat-card";
 import { RunHistoryPanel } from "@/components/profile/run-history-panel";
@@ -24,6 +25,7 @@ const PROFILE_TABS: Array<{ id: ProfileTab; label: string }> = [
 
 export function ProfileDetails({ username }: { username: string }) {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
   const ownProfile = isOwnProfile(username, session?.user?.username);
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const query = useQuery({
@@ -38,6 +40,13 @@ export function ProfileDetails({ username }: { username: string }) {
 
   const profile = query.data;
   const headingLabel = profile?.displayName?.trim() ? profile.displayName : username;
+  const tabParam = searchParams.get("tab");
+
+  useEffect(() => {
+    if (tabParam === "history" || tabParam === "overview") {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   return (
     <>
@@ -151,6 +160,7 @@ export function ProfileDetails({ username }: { username: string }) {
 
         {profile && activeTab === "history" ? (
           <motion.section
+            id="match-history"
             key="history"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}

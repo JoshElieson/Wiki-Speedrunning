@@ -1,19 +1,19 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatDuration } from "@/utils/format";
-import type { ChallengeDescriptor, PersistedRun } from "@/types/domain";
-import type { RouteNode } from "../types/race-state";
+import type { ChallengeDescriptor } from "@/types/domain";
+import type { RunDetail } from "@/server/types/run-history";
 
 interface CompletionModalProps {
   open: boolean;
   challenge: ChallengeDescriptor;
   elapsedMs: number;
   clickCount: number;
-  routeHistory: RouteNode[];
-  submittedRun: PersistedRun | undefined;
+  submittedRun: RunDetail | undefined;
   isSubmitting: boolean;
   submitError: string | null;
   onReplay: () => void;
@@ -25,7 +25,6 @@ export function CompletionModal({
   challenge,
   elapsedMs,
   clickCount,
-  routeHistory,
   submittedRun,
   isSubmitting,
   submitError,
@@ -56,24 +55,20 @@ export function CompletionModal({
                 <p>Difficulty score: {challenge.difficultyScore}</p>
                 <p>Tier: {challenge.difficultyTier}</p>
                 <p>
-                  Leaderboard placement:{" "}
-                  {submittedRun ? <span className="text-[var(--foreground)]">Pending rank refresh</span> : "placeholder"}
-                </p>
-                <p>Graph replay: placeholder (Agent 3 ready hook)</p>
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Full Route</p>
-                <div className="mt-2 flex max-h-36 flex-wrap gap-2 overflow-y-auto">
-                  {routeHistory.map((node, index) => (
-                    <span
-                      key={`${node.title}-${node.visitedAtOffsetMs}`}
-                      className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-elevated)] px-2 py-1 text-xs text-[var(--foreground)]"
-                    >
-                      {index + 1}. {node.title}
+                  ELO change:{" "}
+                  {submittedRun ? (
+                    <span className={submittedRun.eloDelta >= 0 ? "text-emerald-500" : "text-rose-500"}>
+                      {submittedRun.eloDelta >= 0 ? "+" : ""}
+                      {submittedRun.eloDelta}
                     </span>
-                  ))}
-                </div>
+                  ) : (
+                    "Calculating..."
+                  )}
+                </p>
+                <p>
+                  Route Path: <span className="text-[var(--foreground)]">Available on run details page</span>
+                </p>
+                <p>{submittedRun ? "Run details saved." : "Run details saving..."}</p>
               </div>
 
               <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--muted)]">
@@ -81,7 +76,15 @@ export function CompletionModal({
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={onReplay}>Replay challenge</Button>
+                {submittedRun ? (
+                  <Link
+                    href={`/runs/${submittedRun.id}`}
+                    className="inline-flex h-10 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--foreground)] bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-[var(--surface)] shadow-[var(--shadow-soft)] transition-colors hover:bg-[#141c24] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  >
+                    View Run Details
+                  </Link>
+                ) : null}
+                <Button onClick={onReplay}>Race again</Button>
                 <Button variant="outline" onClick={onNewChallenge}>
                   Next challenge
                 </Button>

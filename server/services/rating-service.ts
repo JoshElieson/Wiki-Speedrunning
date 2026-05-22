@@ -1,4 +1,5 @@
-import { DEFAULT_ELO, WIKIPEDIA_ELO_DELTA } from "@/lib/elo";
+import type { Prisma } from "@prisma/client";
+import { DEFAULT_ELO, calculateSoloEloDelta } from "@/lib/elo";
 import {
   PROFILE_VARIETY_SCOPES,
   WIKIPEDIA_ELO_SCOPE,
@@ -10,7 +11,7 @@ const DEFAULT_RATING_SCOPES = [WIKIPEDIA_ELO_SCOPE, ...PROFILE_VARIETY_SCOPES] a
 async function recalculateRanks(scope: string) {
   const entries = await prisma.leaderboardEntry.findMany({
     where: { scope },
-    orderBy: [{ rating: "desc" }, { updatedAt: "asc" }],
+    orderBy: [{ rating: "desc" }, { createdAt: "asc" }, { id: "asc" }],
   });
 
   if (entries.length === 0) {
@@ -25,6 +26,36 @@ async function recalculateRanks(scope: string) {
       }),
     ),
   );
+}
+
+export async function refreshWikipediaLeaderboardStats(userId: string) {
+  await ensureDefaultRatings(userId);
+
+  const completedStats = await prisma.run.aggregate({
+    where: {
+      userId,
+      status: "COMPLETED",
+    },
+    _count: {
+      _all: true,
+    },
+    _min: {
+      durationMs: true,
+    },
+  });
+
+  await prisma.leaderboardEntry.update({
+    where: {
+      scope_userId: {
+        scope: WIKIPEDIA_ELO_SCOPE,
+        userId,
+      },
+    },
+    data: {
+      bestScore: completedStats._count._all,
+      bestTimeMs: completedStats._min.durationMs ?? null,
+    },
+  });
 }
 
 export async function ensureDefaultRatings(userId: string) {
@@ -52,11 +83,29 @@ export async function ensureDefaultRatings(userId: string) {
   await Promise.all(missingScopes.map((scope) => recalculateRanks(scope)));
 }
 
-export async function applyWikipediaMatchElo(userId: string, outcome: "completed" | "abandoned") {
+interface ApplyWikipediaMatchEloInput {
+  userId: string;
+  completed: boolean;
+  durationMs?: number;
+  clickCount?: number;
+  runId?: string;
+}
+
+export async function applyWikipediaMatchElo({
+  userId,
+  completed,
+  durationMs,
+  clickCount,
+  runId,
+}: ApplyWikipediaMatchEloInput): Promise<number> {
   await ensureDefaultRatings(userId);
 
-  const delta = outcome === "completed" ? WIKIPEDIA_ELO_DELTA : -WIKIPEDIA_ELO_DELTA;
-  const context = outcome === "completed" ? "wikipedia_match_completed" : "wikipedia_match_abandoned";
+  const delta = calculateSoloEloDelta({
+    completed,
+    timeMs: durationMs,
+    clicks: clickCount,
+  });
+  const context = completed ? "wikipedia_match_completed" : "wikipedia_match_abandoned";
 
   const entry = await prisma.leaderboardEntry.findUnique({
     where: {
@@ -68,18 +117,18 @@ export async function applyWikipediaMatchElo(userId: string, outcome: "completed
   });
 
   if (!entry) {
-    return;
+    return 0;
   }
 
   const ratingBefore = entry.rating;
-  const ratingAfter = Math.max(0, ratingBefore + delta);
+  const ratingAfter = ratingBefore + delta;
   const appliedDelta = ratingAfter - ratingBefore;
 
   if (appliedDelta === 0) {
-    return;
+    return 0;
   }
 
-  await prisma.$transaction([
+  const tx: Prisma.PrismaPromise<unknown>[] = [
     prisma.leaderboardEntry.update({
       where: { id: entry.id },
       data: { rating: ratingAfter },
@@ -93,7 +142,18 @@ export async function applyWikipediaMatchElo(userId: string, outcome: "completed
         context,
       },
     }),
-  ]);
+  ];
+  if (runId) {
+    tx.push(
+      prisma.run.update({
+        where: { id: runId },
+        data: { eloDelta: appliedDelta },
+      }),
+    );
+  }
+  await prisma.$transaction(tx);
 
   await recalculateRanks(WIKIPEDIA_ELO_SCOPE);
+
+  return appliedDelta;
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { ArrowRight, Search, X } from "lucide-react";
 import { ArticleCard } from "@/components/presentation/article-card";
 import { EmptyPanel } from "@/components/presentation/state-panel";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,12 @@ import {
 import { cn } from "@/utils/cn";
 
 type ProfileRun = ProfileSnapshot["recentRuns"][number];
+
+function getRunEndpoints(run: ProfileRun) {
+  const startTitle = run.route[0] ?? run.challengeLabel;
+  const targetTitle = run.route.at(-1) ?? run.challengeLabel;
+  return { startTitle, targetTitle };
+}
 
 function runStatusLabel(status: ProfileRun["status"]) {
   if (status === "ABANDONED") {
@@ -179,20 +185,34 @@ export function RunHistoryPanel({ runs }: { runs: ProfileSnapshot["recentRuns"] 
         </div>
       ) : (
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          {filteredRuns.map((run) => (
-            <Link key={run.id} href={`/runs/${run.id}`} className="block">
-              <ArticleCard
-                title={run.challengeLabel}
-                description={`${formatDuration(run.durationMs)} · ${run.clickCount} clicks · score ${run.score}`}
-                meta={
-                  <span className="flex flex-wrap items-center gap-2">
-                    <Badge variant={runStatusVariant(run.status)}>{runStatusLabel(run.status)}</Badge>
-                    <span>{new Date(run.createdAt).toLocaleString()}</span>
-                  </span>
-                }
-              />
-            </Link>
-          ))}
+          {filteredRuns.map((run) => {
+            const { startTitle, targetTitle } = getRunEndpoints(run);
+
+            return (
+              <Link key={run.id} href={`/runs/${run.id}`} className="block">
+                <ArticleCard
+                  title={
+                    <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--muted)]">
+                      <span className="rounded-full border border-[var(--border)] bg-[var(--surface-elevated)] px-2.5 py-1 text-[var(--foreground)]">
+                        {startTitle}
+                      </span>
+                      <ArrowRight size={14} className="text-[var(--muted)]" aria-hidden="true" />
+                      <span className="rounded-full border border-[var(--accent)]/50 bg-[var(--surface-elevated)] px-2.5 py-1 text-[var(--foreground)]">
+                        {targetTitle}
+                      </span>
+                    </span>
+                  }
+                  description={`${formatDuration(run.durationMs)} · ${run.clickCount} clicks · score ${run.score}`}
+                  meta={
+                    <span className="flex flex-wrap items-center gap-2">
+                      <Badge variant={runStatusVariant(run.status)}>{runStatusLabel(run.status)}</Badge>
+                      <span>{new Date(run.createdAt).toLocaleString()}</span>
+                    </span>
+                  }
+                />
+              </Link>
+            );
+          })}
         </div>
       )}
     </>

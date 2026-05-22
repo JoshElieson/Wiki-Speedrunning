@@ -136,7 +136,6 @@ export function RaceShell() {
           challenge={race.challenge}
           elapsedMs={elapsedMs}
           clickCount={race.clickCount}
-          route={race.route}
           submittedRun={runSubmissionMutation.data}
           isSubmitting={runSubmissionMutation.isPending}
           submitError={runSubmissionMutation.error instanceof Error ? runSubmissionMutation.error.message : null}

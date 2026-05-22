@@ -65,6 +65,7 @@ export interface RunSubmission {
 export interface PersistedRun extends RunSubmission {
   id: string;
   score: number;
+  eloDelta: number;
   createdAt: string;
 }
 
@@ -108,6 +109,7 @@ export interface ProfileSnapshot {
     durationMs: number;
     clickCount: number;
     score: number;
+    eloDelta: number;
     difficultyScore: number;
     route: string[];
     createdAt: string;

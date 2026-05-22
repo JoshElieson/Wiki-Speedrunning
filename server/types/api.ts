@@ -74,6 +74,7 @@ export interface RunDetailResponse {
   durationMs: number;
   clickCount: number;
   score: number;
+  eloDelta: number;
   route: string[];
   steps: Array<{
     sequence: number;

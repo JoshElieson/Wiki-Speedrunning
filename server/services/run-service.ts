@@ -1,10 +1,12 @@
 import { ApiError } from "@/server/errors/api-error";
+import { calculateSoloEloDelta } from "@/lib/elo";
 import { getChallengeById } from "@/server/repositories/challenge-repository";
 import { getRecentRuns, getRunById, getRunsForChallenge, getRunsForUser, saveRun } from "@/server/repositories/run-repository";
 import { ensureUser } from "@/server/repositories/user-repository";
 import type {
   MatchHistoryFilters,
   LegacyRunTransitionStep,
+  RoutePathData,
   RunDetail,
   RunStepDetail,
   SaveRunRequest,
@@ -14,7 +16,7 @@ import type {
 import type { RunSubmissionRequest } from "@/server/types/api";
 import { normalizeWikiTitle } from "@/server/services/wiki/title-normalization";
 import { validateCompletedRoute } from "./race/route-validation-service";
-import { applyWikipediaMatchElo } from "./rating-service";
+import { applyWikipediaMatchElo, refreshWikipediaLeaderboardStats } from "./rating-service";
 
 function computeRunScore(durationMs: number, clickCount: number): number {
   return Math.max(1000 - Math.floor(durationMs / 100) - clickCount * 4, 0);
@@ -143,12 +145,20 @@ export async function saveCompletedRun(payload: SaveRunRequest): Promise<SaveRun
     score,
     startedAt,
     finishedAt: completedAt,
+    eloDelta: 0,
     routeSteps: canonicalSteps,
   });
 
-  await applyWikipediaMatchElo(user.id, "completed");
+  const eloDelta = await applyWikipediaMatchElo({
+    userId: user.id,
+    completed: true,
+    durationMs: payload.finalElapsedMs,
+    clickCount: payload.clickCount,
+    runId: run.id,
+  });
+  await refreshWikipediaLeaderboardStats(user.id);
 
-  return { run };
+  return { run: { ...run, eloDelta } };
 }
 
 export async function saveAbandonedRun(payload: SaveRunRequest): Promise<SaveRunResponse> {
@@ -168,12 +178,20 @@ export async function saveAbandonedRun(payload: SaveRunRequest): Promise<SaveRun
     score: 0,
     startedAt,
     finishedAt,
+    eloDelta: 0,
     routeSteps: canonicalSteps,
   });
 
-  await applyWikipediaMatchElo(user.id, "abandoned");
+  const eloDelta = await applyWikipediaMatchElo({
+    userId: user.id,
+    completed: false,
+    durationMs: payload.finalElapsedMs,
+    clickCount: payload.clickCount,
+    runId: run.id,
+  });
+  await refreshWikipediaLeaderboardStats(user.id);
 
-  return { run };
+  return { run: { ...run, eloDelta } };
 }
 
 function fromLegacyPayload(payload: RunSubmissionRequest): SaveRunRequest {
@@ -212,6 +230,15 @@ function makeInMemoryRun(payload: RunSubmissionRequest): RunDetail {
     elapsedMs: index === 0 ? 0 : payload.steps[index - 1]?.clickedAtOffsetMs ?? 0,
     kind: index === 0 ? "start" : completed && index === payload.route.length - 1 ? "target" : "intermediate",
   })) satisfies RunStepDetail[];
+  const routePath: RoutePathData = {
+    version: "route_path_v1",
+    nodes: steps.map((step) => ({
+      stepIndex: step.stepIndex,
+      articleTitle: step.articleTitle,
+      normalizedArticleTitle: step.normalizedArticleTitle,
+      elapsedMs: step.elapsedMs,
+    })),
+  };
 
   const localRun: RunDetail = {
     id: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -230,7 +257,13 @@ function makeInMemoryRun(payload: RunSubmissionRequest): RunDetail {
     createdAt: now.toISOString(),
     startArticleTitle,
     targetArticleTitle,
+    eloDelta: calculateSoloEloDelta({
+      completed,
+      timeMs: payload.durationMs,
+      clicks: payload.clickCount,
+    }),
     steps,
+    routePath,
   };
 
   inMemoryRuns.set(localRun.id, localRun);

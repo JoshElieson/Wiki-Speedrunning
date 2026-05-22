@@ -13,18 +13,49 @@ export async function getLeaderboard(scope = DEFAULT_LEADERBOARD_SCOPE, limit = 
         },
       },
     },
-    orderBy: [{ rank: "asc" }, { updatedAt: "desc" }],
+    orderBy: [{ rating: "desc" }, { createdAt: "asc" }, { id: "asc" }],
     take: limit,
   });
 
-  return entries.map((entry) => ({
-    rank: entry.rank,
-    username: entry.user.username,
-    displayName: entry.user.displayName,
-    rating: entry.rating,
-    bestTimeMs: entry.bestTimeMs ?? 0,
-    runs: entry.bestScore ?? 0,
-  }));
+  const userIds = entries.map((entry) => entry.userId);
+  const completedStats =
+    userIds.length > 0
+      ? await prisma.run.groupBy({
+          by: ["userId"],
+          where: {
+            userId: { in: userIds },
+            status: "COMPLETED",
+          },
+          _count: {
+            _all: true,
+          },
+          _min: {
+            durationMs: true,
+          },
+        })
+      : [];
+
+  const completedStatsByUserId = new Map(
+    completedStats.map((stat) => [
+      stat.userId,
+      {
+        completedRuns: stat._count._all,
+        bestTimeMs: stat._min.durationMs ?? 0,
+      },
+    ]),
+  );
+
+  return entries.map((entry, index) => {
+    const stats = completedStatsByUserId.get(entry.userId);
+    return {
+      rank: index + 1,
+      username: entry.user.username,
+      displayName: entry.user.displayName,
+      rating: entry.rating,
+      bestTimeMs: stats?.bestTimeMs ?? entry.bestTimeMs ?? 0,
+      runs: stats?.completedRuns ?? entry.bestScore ?? 0,
+    };
+  });
 }
 
 export async function getLeaderboardEntryForUser(
@@ -39,7 +70,8 @@ export async function getLeaderboardEntryForUser(
       },
     },
     select: {
-      rank: true,
+      id: true,
+      createdAt: true,
       rating: true,
     },
   });
@@ -48,5 +80,20 @@ export async function getLeaderboardEntryForUser(
     return null;
   }
 
-  return { rank: entry.rank, rating: entry.rating };
+  const aheadCount = await prisma.leaderboardEntry.count({
+    where: {
+      scope,
+      OR: [
+        { rating: { gt: entry.rating } },
+        {
+          AND: [{ rating: entry.rating }, { createdAt: { lt: entry.createdAt } }],
+        },
+        {
+          AND: [{ rating: entry.rating }, { createdAt: entry.createdAt }, { id: { lt: entry.id } }],
+        },
+      ],
+    },
+  });
+
+  return { rank: aheadCount + 1, rating: entry.rating };
 }

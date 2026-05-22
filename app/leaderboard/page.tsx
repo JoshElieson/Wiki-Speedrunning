@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { LeaderboardPodium } from "@/components/presentation/leaderboard-podium";
 import { LeaderboardRow } from "@/components/presentation/leaderboard-row";
@@ -10,7 +10,6 @@ import { StatCard } from "@/components/presentation/stat-card";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/presentation/state-panel";
 import { LeaderboardModePicker } from "@/components/presentation/leaderboard-mode-picker";
 import { Card } from "@/components/ui/card";
-import { withLeaderboardPlaceholders } from "@/lib/leaderboard-placeholders";
 import {
   DEFAULT_LEADERBOARD_SCOPE,
   LEADERBOARD_SCOPES,
@@ -33,6 +32,7 @@ export default function LeaderboardPage() {
   const [selectedScope, setSelectedScope] = useState<LeaderboardScope>(DEFAULT_LEADERBOARD_SCOPE);
   const query = useQuery({
     queryKey: ["leaderboard", selectedScope, session?.user?.id ?? "anonymous"],
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const scopeQuery = encodeURIComponent(selectedScope);
       const response = await fetch(`/api/leaderboard?scope=${scopeQuery}`);
@@ -41,7 +41,7 @@ export default function LeaderboardPage() {
     },
   });
 
-  const rows = withLeaderboardPlaceholders(query.data?.rows ?? [], selectedScope);
+  const rows = query.data?.rows ?? [];
   const topThree = rows.slice(0, 3);
   const isSignedIn = sessionStatus === "authenticated" && Boolean(session?.user);
   const viewer = query.data?.viewer;

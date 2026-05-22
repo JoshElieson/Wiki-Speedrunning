@@ -14,6 +14,7 @@ export type RaceModeTheme = {
     progressBar: string;
     statPanel: string;
     ctaEnabled: string;
+    ctaFill: string;
   };
   varietyScope: ProfileVarietyScope | null;
 };
@@ -31,7 +32,8 @@ const WIKIPEDIA_THEME: RaceModeTheme = {
     progressBar: "bg-[var(--accent)]",
     statPanel: "bg-[var(--accent-soft)]/35",
     ctaEnabled:
-      "border-zinc-500 bg-zinc-500 text-white shadow-[var(--shadow-soft)] hover:border-zinc-600 hover:bg-zinc-600",
+      "border-black bg-white text-black shadow-none hover:border-zinc-500 hover:bg-white hover:text-white active:bg-white",
+    ctaFill: "bg-zinc-500",
   },
 };
 
@@ -65,6 +67,7 @@ function buildVarietyTheme(id: Exclude<RaceModeId, "wikipedia">, displayTitle: s
       progressBar: VARIETY_PROGRESS_BAR[scope],
       statPanel: meta.accent.badgeBg,
       ctaEnabled: getVarietyCtaClass(scope),
+      ctaFill: getVarietyCtaFillClass(scope),
     },
   };
 }
@@ -72,15 +75,30 @@ function buildVarietyTheme(id: Exclude<RaceModeId, "wikipedia">, displayTitle: s
 function getVarietyCtaClass(scope: ProfileVarietyScope): string {
   switch (scope) {
     case "minecraft":
-      return "border-emerald-700 bg-emerald-700 text-white shadow-[var(--shadow-soft)] hover:bg-emerald-800";
+      return "border-emerald-700 bg-transparent text-emerald-300 shadow-none hover:border-emerald-700 hover:text-white";
     case "league":
-      return "border-[#C89B3C] bg-[#C89B3C] text-[#1a1408] shadow-[var(--shadow-soft)] hover:bg-[#b88935]";
+      return "border-[#C89B3C] bg-transparent text-[#C89B3C] shadow-none hover:border-[#C89B3C] hover:text-[#1a1408]";
     case "pokemon":
-      return "border-blue-700 bg-blue-700 text-white shadow-[var(--shadow-soft)] hover:bg-blue-800";
+      return "border-blue-700 bg-transparent text-blue-400 shadow-none hover:border-blue-700 hover:text-white";
     case "star-wars":
-      return "border-yellow-500 bg-yellow-500 text-[#1a1408] shadow-[var(--shadow-soft)] hover:border-yellow-600 hover:bg-yellow-600";
+      return "border-yellow-500 bg-transparent text-yellow-400 shadow-none hover:border-yellow-500 hover:text-[#1a1408]";
     case "marvel":
-      return "border-rose-600 bg-rose-600 text-white shadow-[var(--shadow-soft)] hover:bg-rose-700";
+      return "border-rose-600 bg-transparent text-rose-400 shadow-none hover:border-rose-600 hover:text-white";
+  }
+}
+
+function getVarietyCtaFillClass(scope: ProfileVarietyScope): string {
+  switch (scope) {
+    case "minecraft":
+      return "bg-emerald-700";
+    case "league":
+      return "bg-[#C89B3C]";
+    case "pokemon":
+      return "bg-blue-700";
+    case "star-wars":
+      return "bg-yellow-500";
+    case "marvel":
+      return "bg-rose-600";
   }
 }
 

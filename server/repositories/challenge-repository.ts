@@ -96,23 +96,31 @@ export async function getChallengeById(challengeId: string): Promise<ChallengeDe
 }
 
 export async function getRandomActiveChallenge(): Promise<ChallengeDescriptor | null> {
-  const candidates = await prisma.challenge.findMany({
+  const total = await prisma.challenge.count({ where: { isActive: true } });
+  if (total === 0) {
+    return null;
+  }
+
+  const randomOffset = Math.floor(Math.random() * total);
+  const [challenge] = await prisma.challenge.findMany({
     where: { isActive: true },
     include: {
       startArticle: { select: { title: true } },
       targetArticle: { select: { title: true } },
       dailyChallenges: { select: { id: true } },
     },
-    take: 20,
+    skip: randomOffset,
+    take: 1,
     orderBy: { updatedAt: "desc" },
   });
 
-  if (candidates.length === 0) {
-    return null;
-  }
+  return challenge ? toChallengeDescriptor(challenge) : null;
+}
 
-  const pick = candidates[Math.floor(Math.random() * candidates.length)];
-  return toChallengeDescriptor(pick);
+export async function getActiveChallengeCount(): Promise<number> {
+  return prisma.challenge.count({
+    where: { isActive: true },
+  });
 }
 
 export async function getDailyChallengeByDateKey(dateKey: string): Promise<ChallengeDescriptor | null> {

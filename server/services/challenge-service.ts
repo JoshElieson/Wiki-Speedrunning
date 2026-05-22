@@ -2,8 +2,10 @@ import { REDIS_KEYS } from "@/db/constants";
 import { isDatabaseConfigured, isPrismaConfigError } from "@/lib/database";
 import { cache } from "@/server/cache/cache";
 import { ApiError } from "@/server/errors/api-error";
+import { fetchRandomArticleTitles } from "@/server/services/wiki/wikipedia-service";
 import {
   createChallenge,
+  getActiveChallengeCount,
   getChallengeById,
   getDailyChallengeByDateKey,
   getRandomActiveChallenge,
@@ -79,6 +81,10 @@ const DAILY_ARTICLE_POOL = [
 ];
 
 const DAILY_MODES: DailyChallengeMode[] = ["time", "clicks"];
+const GENERATED_POOL_CACHE_KEY = "challenge:generated:wikipedia-articles:v1";
+const GENERATED_POOL_SIZE = 10_000;
+const GENERATED_POOL_TTL_SECONDS = 12 * 60 * 60;
+const GENERATED_ACTIVE_CHALLENGE_TARGET = 10_000;
 
 const DAILY_MODE_OBJECTIVES: Record<DailyChallengeMode, string> = {
   time: "Reach the target as fast as possible!",
@@ -108,6 +114,63 @@ function fallbackChallenge(seed: ChallengeSeed, source: "daily" | "generated", i
 function pickFallbackGeneratedChallenge(): ChallengeDescriptor {
   const index = Math.floor(Math.random() * FALLBACK_SEEDS.length);
   return fallbackChallenge(FALLBACK_SEEDS[index], "generated", `generated-seed-${index}`);
+}
+
+function uniqueFallbackTitles(): string[] {
+  return Array.from(
+    new Set([
+      ...DAILY_ARTICLE_POOL,
+      ...FALLBACK_SEEDS.flatMap((seed) => [seed.startTitle, seed.targetTitle]),
+    ]),
+  );
+}
+
+async function getGeneratedArticlePool(): Promise<string[]> {
+  const cached = await cache.get<string[]>(GENERATED_POOL_CACHE_KEY);
+  if (cached && cached.length >= 250) {
+    return cached;
+  }
+
+  try {
+    const randomTitles = await fetchRandomArticleTitles(GENERATED_POOL_SIZE);
+    const combined = Array.from(new Set([...randomTitles, ...uniqueFallbackTitles()]));
+    await cache.set(GENERATED_POOL_CACHE_KEY, combined, GENERATED_POOL_TTL_SECONDS);
+    return combined;
+  } catch (error) {
+    console.warn("[challenge-service] Failed to build generated Wikipedia title pool; using built-in fallback pool.", error);
+    const fallbackPool = uniqueFallbackTitles();
+    await cache.set(GENERATED_POOL_CACHE_KEY, fallbackPool, 5 * 60);
+    return fallbackPool;
+  }
+}
+
+function buildGeneratedChallengeFromPool(pool: string[]): ChallengeDescriptor | null {
+  if (pool.length < 2) {
+    return null;
+  }
+
+  const startIndex = Math.floor(Math.random() * pool.length);
+  let targetIndex = Math.floor(Math.random() * pool.length);
+  while (targetIndex === startIndex) {
+    targetIndex = Math.floor(Math.random() * pool.length);
+  }
+
+  const startTitle = pool[startIndex];
+  const targetTitle = pool[targetIndex];
+  const difficultyScore = 42 + Math.floor(Math.random() * 45);
+  const shortestPathHint = Math.max(2, Math.round(difficultyScore / 20));
+  const idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+  return {
+    id: `generated-random-${idSuffix}`,
+    label: "Random Wikipedia Sprint",
+    startTitle,
+    targetTitle,
+    difficultyScore,
+    difficultyTier: inferTier(difficultyScore),
+    shortestPathHint,
+    source: "generated",
+  };
 }
 
 export function getFallbackChallengeById(challengeId: string): ChallengeDescriptor | null {
@@ -340,6 +403,28 @@ export async function fetchChallengeById(challengeId: string) {
 export async function getNextGeneratedChallenge(): Promise<ChallengeDescriptor> {
   if (isDatabaseConfigured()) {
     try {
+      const activeCount = await getActiveChallengeCount();
+      if (activeCount >= GENERATED_ACTIVE_CHALLENGE_TARGET) {
+        const persisted = await getRandomActiveChallenge();
+        if (persisted) {
+          return persisted;
+        }
+      }
+
+      const pool = await getGeneratedArticlePool();
+      const generated = buildGeneratedChallengeFromPool(pool);
+      if (generated) {
+        return createChallenge({
+          label: generated.label,
+          startTitle: generated.startTitle,
+          targetTitle: generated.targetTitle,
+          difficultyScore: generated.difficultyScore,
+          shortestPathHint: generated.shortestPathHint,
+          seed: generated.id,
+          isActive: true,
+        });
+      }
+
       const persisted = await getRandomActiveChallenge();
       if (persisted) {
         return persisted;
@@ -351,6 +436,16 @@ export async function getNextGeneratedChallenge(): Promise<ChallengeDescriptor> 
 
       console.warn("[challenge-service] Database unavailable; using built-in solo challenges.", error);
     }
+  }
+
+  try {
+    const pool = await getGeneratedArticlePool();
+    const generated = buildGeneratedChallengeFromPool(pool);
+    if (generated) {
+      return generated;
+    }
+  } catch (error) {
+    console.warn("[challenge-service] Failed to build dynamic generated challenge; using static fallback seeds.", error);
   }
 
   return pickFallbackGeneratedChallenge();

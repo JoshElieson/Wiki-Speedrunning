@@ -112,6 +112,7 @@ model Run {
   durationMs          Int
   clickCount          Int
   score               Int
+  eloDelta            Int            @default(0)
   antiCheatHash       String?
   startedAt           DateTime
   finishedAt          DateTime

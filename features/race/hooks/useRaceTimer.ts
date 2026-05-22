@@ -22,7 +22,7 @@ export function useRaceTimer(initialElapsedMs = 0): RaceTimerControls {
     }
 
     const timer = window.setInterval(() => {
-      if (!startedAtRef.current) {
+      if (startedAtRef.current === null) {
         return;
       }
       setElapsedMs(carryOverRef.current + (Date.now() - startedAtRef.current));
@@ -45,7 +45,7 @@ export function useRaceTimer(initialElapsedMs = 0): RaceTimerControls {
     }
     const now = Date.now();
     const base = carryOverRef.current;
-    const delta = startedAtRef.current ? now - startedAtRef.current : 0;
+    const delta = startedAtRef.current === null ? 0 : now - startedAtRef.current;
     const nextElapsed = Math.max(base + delta, 0);
     carryOverRef.current = nextElapsed;
     setElapsedMs(nextElapsed);

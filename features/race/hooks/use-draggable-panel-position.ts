@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const STORAGE_KEY = "wikirush.race-hud-position";
 const VIEWPORT_MARGIN = 24;
 
-function defaultPositionForPanel(panelWidth: number, panelHeight: number): Point {
+function defaultPositionForPanel(panelWidth: number): Point {
   return {
     x: Math.max(VIEWPORT_MARGIN, window.innerWidth - panelWidth - VIEWPORT_MARGIN),
     y: VIEWPORT_MARGIN,
@@ -86,7 +86,7 @@ export function useDraggablePanelPosition() {
 
     const rect = panel.getBoundingClientRect();
     const initial =
-      positionRef.current ?? defaultPositionForPanel(rect.width, rect.height);
+      positionRef.current ?? defaultPositionForPanel(rect.width);
     syncPanelTransform(initial);
   }, [syncPanelTransform]);
 
@@ -98,7 +98,7 @@ export function useDraggablePanelPosition() {
       }
 
       const rect = panel.getBoundingClientRect();
-      syncPanelTransform(positionRef.current ?? defaultPositionForPanel(rect.width, rect.height));
+      syncPanelTransform(positionRef.current ?? defaultPositionForPanel(rect.width));
     };
 
     window.addEventListener("resize", onResize);
@@ -136,7 +136,7 @@ export function useDraggablePanelPosition() {
       }
 
       const rect = panel.getBoundingClientRect();
-      const position = positionRef.current ?? defaultPositionForPanel(rect.width, rect.height);
+      const position = positionRef.current ?? defaultPositionForPanel(rect.width);
       positionRef.current = position;
       applyPanelTransform(panel, position);
 

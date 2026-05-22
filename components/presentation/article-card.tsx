@@ -6,8 +6,8 @@ export function ArticleCard({
   description,
   meta,
 }: {
-  title: string;
-  description: string;
+  title: ReactNode;
+  description: ReactNode;
   meta?: ReactNode;
 }) {
   return (
