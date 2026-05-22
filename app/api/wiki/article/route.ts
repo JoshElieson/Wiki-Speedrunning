@@ -1,4 +1,4 @@
-import { fetchArticleByTitle } from "@/features/wiki/services/wiki-service";
+import { fetchArticleByTitle } from "@/server/services/wiki/wikipedia-service";
 import { asApiError } from "@/server/errors/api-error";
 import { wikiArticleQuerySchema } from "@/server/validation/api-schemas";
 import { NextResponse } from "next/server";

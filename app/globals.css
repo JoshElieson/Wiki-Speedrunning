@@ -82,3 +82,103 @@ button:disabled,
   outline: none;
   box-shadow: 0 0 0 2px rgba(47, 93, 140, 0.3);
 }
+
+.race-wiki-content p,
+.race-wiki-content ul,
+.race-wiki-content ol,
+.race-wiki-content dl,
+.race-wiki-content table {
+  margin: 0 0 0.8rem;
+}
+
+.race-wiki-shell {
+  font-family: sans-serif;
+}
+
+.race-wiki-page-header {
+  margin-bottom: 0.7rem;
+}
+
+.race-wiki-content h2,
+.race-wiki-content h3,
+.race-wiki-content h4 {
+  margin: 1.3rem 0 0.5rem;
+  border-bottom: 1px solid #a2a9b1;
+  color: #202122;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.race-wiki-content h2 {
+  font-size: 1.5em;
+}
+
+.race-wiki-content h3 {
+  font-size: 1.2em;
+}
+
+.race-wiki-content h4 {
+  font-size: 1.05em;
+}
+
+.race-wiki-content .mw-parser-output {
+  width: 100%;
+  max-width: none;
+}
+
+.race-wiki-content a {
+  color: #3366cc;
+  text-decoration: none;
+}
+
+.race-wiki-content a:hover {
+  text-decoration: underline;
+}
+
+.race-wiki-content table {
+  width: auto;
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.race-wiki-content th,
+.race-wiki-content td {
+  border: 1px solid #c8ccd1;
+  padding: 0.2rem 0.4rem;
+  vertical-align: top;
+}
+
+.race-wiki-content ul,
+.race-wiki-content ol {
+  padding-left: 1.6rem;
+}
+
+.race-wiki-content .infobox {
+  float: right;
+  clear: right;
+  margin: 0 0 1em 1em;
+  max-width: min(23em, 100%);
+  border: 1px solid #a2a9b1;
+  background-color: #f8f9fa;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.race-wiki-content .infobox caption {
+  background: #eaecf0;
+  font-weight: 700;
+}
+
+.race-wiki-content .infobox th,
+.race-wiki-content .infobox td {
+  border: 1px solid #a2a9b1;
+}
+
+@media (max-width: 960px) {
+  .race-wiki-content .infobox {
+    float: none;
+    margin: 0 0 1em;
+  }
+}

@@ -1,19 +1,53 @@
-const DISALLOWED_PREFIXES = ["File:", "Help:", "Template:", "Category:", "Portal:", "Special:", "Talk:", "User:"];
+const DISALLOWED_PREFIXES = [
+  "File:",
+  "Help:",
+  "Template:",
+  "Category:",
+  "Portal:",
+  "Special:",
+  "Talk:",
+  "User:",
+  "Wikipedia:",
+  "Module:",
+  "Draft:",
+  "MediaWiki:",
+  "Book:",
+];
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 export function normalizeWikiTitle(rawTitle: string): string {
-  return decodeURIComponent(rawTitle)
+  return safeDecodeURIComponent(rawTitle)
     .trim()
     .replace(/_/g, " ")
     .replace(/\s+/g, " ")
-    .replace(/#/g, "")
-    .replace(/^\s+|\s+$/g, "")
+    .replace(/#.*$/g, "")
+    .trim()
     .replace(/\s/g, "_");
 }
 
-export function isLikelyArticleTitle(title: string): boolean {
-  if (!title || title.length < 1) {
+export function toWikiTitleKey(rawTitle: string): string {
+  return normalizeWikiTitle(rawTitle).toLowerCase();
+}
+
+/** Wikipedia disambiguation suffix, e.g. "Nexus (League of Legends)" → "Nexus". */
+export function stripWikiDisambiguation(title: string): string {
+  const stripped = title.replace(/\s+\([^)]+\)\s*$/, "").trim();
+  return stripped || title;
+}
+
+export function isLikelyArticleTitle(rawTitle: string): boolean {
+  const title = normalizeWikiTitle(rawTitle);
+  if (!title) {
     return false;
   }
 
-  return !DISALLOWED_PREFIXES.some((prefix) => title.startsWith(prefix));
+  const upper = title.toUpperCase();
+  return !DISALLOWED_PREFIXES.some((prefix) => upper.startsWith(prefix.toUpperCase()));
 }

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { getServerSession } from "next-auth";
 import "./globals.css";
+import { authOptions } from "@/lib/auth-options";
 import { AppProviders } from "./providers";
 import { TopNav } from "@/components/layout/top-nav";
 
@@ -15,22 +17,24 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Wikipedia Ranked",
+  title: "Wiki Speedrunning",
   description: "Race through Wikipedia. Master the knowledge graph.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getServerSession(authOptions);
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
-        <AppProviders>
+        <AppProviders session={session}>
           <TopNav />
           {children}
         </AppProviders>

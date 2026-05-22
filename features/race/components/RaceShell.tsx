@@ -1,12 +1,11 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArticlePanel } from "./ArticlePanel";
-import { CompletionModal } from "./CompletionModal";
+import { RaceHeader } from "./RaceHeader";
+import { RaceResult } from "./RaceResult";
 import { RaceSidebar } from "./RaceSidebar";
-import { RaceTimer } from "./RaceTimer";
 import { useRaceController } from "../hooks/useRaceController";
 
 export function RaceShell() {
@@ -14,10 +13,12 @@ export function RaceShell() {
     race,
     elapsedMs,
     invalidMoveTitle,
+    pendingMoveTitle,
     challengeQuery,
     articleQuery,
     runSubmissionMutation,
     isArticleTransitioning,
+    startRace,
     navigateToLink,
     restartRace,
     loadFreshChallenge,
@@ -25,38 +26,61 @@ export function RaceShell() {
   } = useRaceController();
 
   const remainingHint = race.challenge?.shortestPathHint != null ? Math.max(race.challenge.shortestPathHint - race.clickCount, 0) : null;
-  const statusLabel = race.status === "active" ? "Live" : race.status;
+  const showIdle = race.status === "idle";
 
-  if (challengeQuery.isPending && !race.challenge) {
-    return (
-      <Card className="p-6">
-        <div className="space-y-3">
-          <div className="h-5 w-48 animate-pulse rounded bg-[#ddd7ca]" />
-          <div className="h-4 w-full animate-pulse rounded bg-[#ddd7ca]" />
-          <div className="h-4 w-3/4 animate-pulse rounded bg-[#ddd7ca]" />
-        </div>
-      </Card>
-    );
-  }
-
-  if ((race.status === "error" || challengeQuery.isError) && !race.challenge) {
+  if (race.status === "error" && !race.challenge) {
     return (
       <Card className="space-y-4 border-[#b77c70]/50 bg-[#f8ece9] p-6">
         <div>
           <h2 className="text-xl font-semibold text-[#7a3125]">Race failed to initialize</h2>
-          <p className="mt-1 text-sm text-[#8f4538]">{race.errorMessage ?? "Unable to initialize a race challenge."}</p>
+          <p className="mt-1 text-sm text-[#8f4538]">{race.error ?? "Unable to initialize a race challenge."}</p>
         </div>
-        <Button onClick={loadFreshChallenge}>Retry</Button>
+        <Button onClick={startRace}>Retry</Button>
       </Card>
     );
   }
 
-  if (!race.challenge) {
+  if (!race.challenge && showIdle) {
     return (
-      <Card className="space-y-4 p-6">
-        <p className="text-[var(--muted)]">No challenge available right now.</p>
-        <Button onClick={loadFreshChallenge}>Load challenge</Button>
-      </Card>
+      <section className="space-y-4">
+        <RaceHeader
+          status={race.status}
+          elapsedMs={elapsedMs}
+          currentArticleTitle={race.currentArticle?.title ?? null}
+          targetArticleTitle={race.targetArticle?.title ?? null}
+          onStart={startRace}
+          startDisabled={challengeQuery.isFetching}
+        />
+        <Card className="p-8 text-center">
+          <h2 className="text-xl font-semibold text-[var(--foreground)]">Ready to speedrun?</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Click <span className="font-medium">Start Race</span> to draw a challenge and begin navigating only through valid
+            in-article links.
+          </p>
+        </Card>
+      </section>
+    );
+  }
+
+  if (!race.challenge && race.status === "loading") {
+    return (
+      <section className="space-y-4">
+        <RaceHeader
+          status={race.status}
+          elapsedMs={elapsedMs}
+          currentArticleTitle={race.currentArticle?.title ?? null}
+          targetArticleTitle={race.targetArticle?.title ?? null}
+          onStart={startRace}
+          startDisabled
+        />
+        <Card className="p-6">
+          <div className="space-y-3">
+            <div className="h-5 w-48 animate-pulse rounded bg-[#ddd7ca]" />
+            <div className="h-4 w-full animate-pulse rounded bg-[#ddd7ca]" />
+            <div className="h-4 w-3/4 animate-pulse rounded bg-[#ddd7ca]" />
+          </div>
+        </Card>
+      </section>
     );
   }
 
@@ -67,7 +91,7 @@ export function RaceShell() {
           {race.status === "error" ? (
             <Card className="border-[#c9a063]/50 bg-[#f8f1e2] p-4 text-sm text-[#6a4e1f]">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p>{race.errorMessage ?? "A race error occurred."}</p>
+                <p>{race.error ?? "A race error occurred."}</p>
                 <Button size="sm" variant="outline" onClick={loadFreshChallenge}>
                   Recover
                 </Button>
@@ -75,29 +99,21 @@ export function RaceShell() {
             </Card>
           ) : null}
 
-          <Card className="relative overflow-hidden p-5">
-            <div className="relative flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Current Article</p>
-                <motion.h2
-                  key={race.currentArticleTitle}
-                  initial={{ opacity: 0.8, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-2xl font-semibold text-[var(--foreground)]"
-                >
-                  {race.currentArticleTitle}
-                </motion.h2>
-                <p className="mt-1 text-xs text-[var(--muted)]">Goal: {race.targetArticleTitle}</p>
-              </div>
-              <RaceTimer elapsedMs={elapsedMs} statusLabel={statusLabel} />
-            </div>
-          </Card>
+          <RaceHeader
+            status={race.status}
+            elapsedMs={elapsedMs}
+            currentArticleTitle={race.currentArticle?.title ?? null}
+            targetArticleTitle={race.targetArticle?.title ?? null}
+            onStart={startRace}
+            startDisabled={race.status === "active" || challengeQuery.isFetching}
+          />
 
           <ArticlePanel
             article={articleQuery.data}
-            isLoading={isArticleTransitioning}
+            isLoading={isArticleTransitioning || race.status === "loading"}
             isActiveRace={race.status === "active"}
             invalidMoveTitle={invalidMoveTitle}
+            pendingMoveTitle={pendingMoveTitle}
             onLinkClick={navigateToLink}
           />
         </section>
@@ -107,25 +123,26 @@ export function RaceShell() {
           status={race.status}
           clickCount={race.clickCount}
           remainingHint={remainingHint}
-          routeHistory={race.routeHistory}
+          route={race.route}
           onAbandon={abandonRace}
           onRestart={restartRace}
           onNewChallenge={loadFreshChallenge}
         />
       </div>
 
-      <CompletionModal
-        open={race.status === "completed"}
-        challenge={race.challenge}
-        elapsedMs={elapsedMs}
-        clickCount={race.clickCount}
-        routeHistory={race.routeHistory}
-        submittedRun={runSubmissionMutation.data}
-        isSubmitting={runSubmissionMutation.isPending}
-        submitError={runSubmissionMutation.error instanceof Error ? runSubmissionMutation.error.message : null}
-        onReplay={restartRace}
-        onNewChallenge={loadFreshChallenge}
-      />
+      {race.challenge ? (
+        <RaceResult
+          open={race.status === "completed"}
+          challenge={race.challenge}
+          elapsedMs={elapsedMs}
+          clickCount={race.clickCount}
+          route={race.route}
+          submittedRun={runSubmissionMutation.data}
+          isSubmitting={runSubmissionMutation.isPending}
+          submitError={runSubmissionMutation.error instanceof Error ? runSubmissionMutation.error.message : null}
+          onRaceAgain={loadFreshChallenge}
+        />
+      ) : null}
     </>
   );
 }

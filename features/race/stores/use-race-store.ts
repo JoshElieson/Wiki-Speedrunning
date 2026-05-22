@@ -1,16 +1,18 @@
 import { create } from "zustand";
 import type { RaceActions, RaceState, RouteNode } from "../types/race-state";
+import { normalizeWikiTitle, toWikiTitleKey } from "@/features/wiki/services/title-normalization";
 
 const initialState: RaceState = {
   status: "idle",
   challenge: null,
-  currentArticleTitle: null,
-  targetArticleTitle: null,
-  routeHistory: [],
+  currentArticle: null,
+  targetArticle: null,
+  route: [],
   clickCount: 0,
-  startedAtMs: null,
-  finishedAtMs: null,
-  errorMessage: null,
+  startedAt: null,
+  completedAt: null,
+  elapsedMs: 0,
+  error: null,
 };
 
 function makeRouteNode(title: string, startedAtMs: number): RouteNode {
@@ -28,35 +30,42 @@ export const useRaceStore = create<RaceState & RaceActions>((set, get) => ({
       return;
     }
 
-    set({ status: "loading", errorMessage: null });
+    set({ status: "loading", error: null });
   },
-  startRace: (challenge) => {
-    const startedAtMs = Date.now();
+  startRace: (challenge, startArticleTitle) => {
+    const startedAt = Date.now();
+    const normalizedStart = normalizeWikiTitle(startArticleTitle);
+    const normalizedTarget = normalizeWikiTitle(challenge.targetTitle);
     set({
       status: "active",
       challenge,
-      currentArticleTitle: challenge.startTitle,
-      targetArticleTitle: challenge.targetTitle,
-      routeHistory: [{ title: challenge.startTitle, visitedAtOffsetMs: 0 }],
+      currentArticle: { title: normalizedStart.replace(/_/g, " "), normalizedTitle: normalizedStart },
+      targetArticle: { title: normalizedTarget.replace(/_/g, " "), normalizedTitle: normalizedTarget },
+      route: [{ title: normalizedStart.replace(/_/g, " "), visitedAtOffsetMs: 0 }],
       clickCount: 0,
-      startedAtMs,
-      finishedAtMs: null,
-      errorMessage: null,
+      startedAt,
+      completedAt: null,
+      elapsedMs: 0,
+      error: null,
     });
   },
-  visitArticle: (title) => {
+  visitArticle: (nextArticleTitle, normalizedTitle, nowMs = Date.now()) => {
     const state = get();
-    if (state.status !== "active" || !state.startedAtMs) {
+    if (state.status !== "active" || !state.startedAt) {
       return;
     }
 
+    const articleTitle = nextArticleTitle.trim();
+    const articleNormalized = normalizeWikiTitle(normalizedTitle || nextArticleTitle);
+    const elapsedMs = Math.max(nowMs - state.startedAt, 0);
     set({
-      currentArticleTitle: title,
-      routeHistory: [...state.routeHistory, makeRouteNode(title, state.startedAtMs)],
+      currentArticle: { title: articleTitle, normalizedTitle: articleNormalized },
+      route: [...state.route, makeRouteNode(articleTitle, state.startedAt)],
       clickCount: state.clickCount + 1,
+      elapsedMs,
     });
 
-    if (state.targetArticleTitle && title === state.targetArticleTitle) {
+    if (state.targetArticle && toWikiTitleKey(state.targetArticle.normalizedTitle) === toWikiTitleKey(articleNormalized)) {
       get().completeRace();
     }
   },
@@ -65,7 +74,13 @@ export const useRaceStore = create<RaceState & RaceActions>((set, get) => ({
       return;
     }
 
-    set({ status: "completed", finishedAtMs: Date.now() });
+    const completedAt = Date.now();
+    const state = get();
+    set({
+      status: "completed",
+      completedAt,
+      elapsedMs: state.startedAt ? Math.max(completedAt - state.startedAt, 0) : state.elapsedMs,
+    });
   },
   abandonRace: () => {
     const state = get();
@@ -73,7 +88,7 @@ export const useRaceStore = create<RaceState & RaceActions>((set, get) => ({
       return;
     }
 
-    set({ status: "abandoned", finishedAtMs: Date.now() });
+    set({ status: "idle", challenge: null, currentArticle: null, targetArticle: null, route: [], clickCount: 0, startedAt: null, completedAt: null, elapsedMs: 0, error: null });
   },
   restartRace: () => {
     const challenge = get().challenge;
@@ -82,21 +97,32 @@ export const useRaceStore = create<RaceState & RaceActions>((set, get) => ({
       return;
     }
 
-    get().startRace(challenge);
+    get().startRace(challenge, challenge.startTitle);
   },
   setRaceError: (message) => {
-    const finishedAtMs = get().finishedAtMs ?? Date.now();
-    set({ status: "error", finishedAtMs, errorMessage: message });
+    set({ status: "error", completedAt: Date.now(), error: message });
   },
-  clearRaceError: () => set({ errorMessage: null }),
+  clearError: () => set({ error: null }),
+  tickElapsed: (nowMs = Date.now()) => {
+    const state = get();
+    if (!state.startedAt || state.status !== "active") {
+      return;
+    }
+
+    set({ elapsedMs: Math.max(nowMs - state.startedAt, 0) });
+  },
   resetRace: () => set(initialState),
 }));
 
 export function getRaceElapsedMs(state: RaceState) {
-  if (!state.startedAtMs) {
+  if (!state.startedAt) {
     return 0;
   }
 
-  const end = state.finishedAtMs ?? Date.now();
-  return Math.max(end - state.startedAtMs, 0);
+  if (state.status === "active") {
+    return state.elapsedMs;
+  }
+
+  const end = state.completedAt ?? Date.now();
+  return Math.max(end - state.startedAt, 0);
 }

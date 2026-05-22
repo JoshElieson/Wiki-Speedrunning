@@ -10,6 +10,7 @@ interface ArticlePanelProps {
   isLoading: boolean;
   isActiveRace: boolean;
   invalidMoveTitle: string | null;
+  pendingMoveTitle: string | null;
   onLinkClick: (title: string) => void;
 }
 
@@ -28,7 +29,7 @@ function ArticleSkeleton() {
   );
 }
 
-export function ArticlePanel({ article, isLoading, isActiveRace, invalidMoveTitle, onLinkClick }: ArticlePanelProps) {
+export function ArticlePanel({ article, isLoading, isActiveRace, invalidMoveTitle, pendingMoveTitle, onLinkClick }: ArticlePanelProps) {
   return (
     <Card className="p-5">
       <AnimatePresence mode="wait">
@@ -67,8 +68,8 @@ export function ArticlePanel({ article, isLoading, isActiveRace, invalidMoveTitl
                       key={link.normalizedTitle}
                       title={link.title}
                       onClick={onLinkClick}
-                      disabled={!isActiveRace}
-                      highlighted={false}
+                      disabled={!isActiveRace || pendingMoveTitle !== null}
+                      highlighted={pendingMoveTitle === link.title}
                     />
                   ))}
                 </div>

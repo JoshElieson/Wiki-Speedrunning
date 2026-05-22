@@ -9,6 +9,7 @@ const badgeVariants = cva("inline-flex items-center rounded-[var(--radius-sm)] b
       neutral: "border-[var(--border)] bg-[var(--surface-elevated)] text-[var(--muted)]",
       purple: "border-[#8f7d66]/40 bg-[#f3ede3] text-[#5b4a38]",
       success: "border-[#67806e]/40 bg-[#ecf3ee] text-[#355340]",
+      danger: "border-[#d33]/40 bg-[#fee7e6] text-[#8f2f2a]",
     },
   },
   defaultVariants: {

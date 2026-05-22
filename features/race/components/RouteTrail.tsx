@@ -4,17 +4,17 @@ import { motion } from "framer-motion";
 import type { RouteNode } from "../types/race-state";
 
 interface RouteTrailProps {
-  routeHistory: RouteNode[];
+  route: RouteNode[];
 }
 
-export function RouteTrail({ routeHistory }: RouteTrailProps) {
-  if (!routeHistory.length) {
+export function RouteTrail({ route }: RouteTrailProps) {
+  if (!route.length) {
     return <p className="text-sm text-[var(--muted)]">Your route will appear here as you navigate.</p>;
   }
 
   return (
     <div className="flex max-h-64 flex-wrap gap-2 overflow-y-auto">
-      {routeHistory.map((node, index) => (
+      {route.map((node, index) => (
         <motion.span
           layout
           key={`${node.title}-${node.visitedAtOffsetMs}`}

@@ -2,11 +2,13 @@ import { REDIS_KEYS } from "@/db/constants";
 import { ApiError } from "@/server/errors/api-error";
 import { cache } from "@/server/cache/cache";
 import type { WikiArticle, WikiArticleLink } from "@/types/domain";
-import { isLikelyArticleTitle, normalizeWikiTitle } from "./title-normalization";
+import { isLikelyArticleTitle, normalizeWikiTitle, toWikiTitleKey } from "./title-normalization";
+import sanitizeHtml from "sanitize-html";
 
 const WIKIPEDIA_API_BASE = "https://en.wikipedia.org/w/api.php";
 const ARTICLE_CACHE_TTL_SECONDS = 10 * 60;
 const LINKS_CACHE_TTL_SECONDS = 10 * 60;
+const WIKI_RENDER_CACHE_VERSION = "v2";
 
 type WikipediaPage = {
   pageid?: number;
@@ -15,6 +17,32 @@ type WikipediaPage = {
   fullurl?: string;
   links?: Array<{ title?: string }>;
   missing?: boolean;
+};
+
+type WikipediaParseResponse = {
+  parse?: {
+    title?: string;
+    pageid?: number;
+    displaytitle?: string;
+    text?: {
+      "*": string;
+    };
+    links?: Array<{
+      ns?: number;
+      exists?: string;
+      "*": string;
+    }>;
+  };
+  error?: {
+    code: string;
+    info: string;
+  };
+};
+
+type WikipediaParseLink = {
+  ns?: number;
+  exists?: string;
+  "*": string;
 };
 
 type WikipediaQueryResponse = {
@@ -28,9 +56,112 @@ type WikipediaQueryResponse = {
   };
 };
 
-async function fetchWikipediaJson(params: URLSearchParams): Promise<WikipediaQueryResponse> {
+const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    "abbr",
+    "annotation",
+    "p",
+    "a",
+    "b",
+    "bdi",
+    "br",
+    "cite",
+    "i",
+    "em",
+    "strong",
+    "small",
+    "sup",
+    "sub",
+    "blockquote",
+    "ul",
+    "ol",
+    "li",
+    "dl",
+    "dt",
+    "dd",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "caption",
+    "code",
+    "pre",
+    "figure",
+    "figcaption",
+    "img",
+    "q",
+    "span",
+    "div",
+    "math",
+    "semantics",
+    "mstyle",
+    "mrow",
+    "mspace",
+    "mfrac",
+    "msqrt",
+    "msub",
+    "msup",
+    "msubsup",
+    "mover",
+    "mroot",
+    "mtable",
+    "mtr",
+    "mtd",
+    "mi",
+    "mn",
+    "mo",
+    "mtext",
+    "style",
+    "link",
+    "meta",
+  ],
+  allowedAttributes: {
+    a: ["href", "title", "rel", "class", "id"],
+    img: ["src", "srcset", "sizes", "alt", "width", "height", "loading", "decoding", "class", "id"],
+    table: ["class", "id", "style"],
+    th: ["scope", "colspan", "rowspan", "class", "id", "style"],
+    td: ["colspan", "rowspan", "class", "id", "style"],
+    span: ["class", "id", "style", "lang", "dir"],
+    div: ["class", "id", "style", "lang", "dir", "role"],
+    math: ["xmlns", "display", "class", "id", "style"],
+    "*": [
+      "class",
+      "id",
+      "style",
+      "title",
+      "lang",
+      "dir",
+      "role",
+      "aria-hidden",
+      "aria-label",
+      "aria-labelledby",
+      "data-ct-options",
+      "data-file-height",
+      "data-file-width",
+      "data-mw-group",
+      "data-mw-deduplicate",
+      "typeof",
+    ],
+    link: ["rel", "href", "type", "media"],
+    meta: ["charset", "name", "content", "property"],
+  },
+  disallowedTagsMode: "discard",
+  parser: {
+    lowerCaseTags: true,
+  },
+  allowedSchemes: ["http", "https", "data"],
+};
+
+async function fetchWikipediaJson<T extends WikipediaQueryResponse | WikipediaParseResponse>(params: URLSearchParams): Promise<T> {
   const response = await fetch(`${WIKIPEDIA_API_BASE}?${params.toString()}`, {
-    headers: { "User-Agent": "WikiRush/1.0 (portfolio project)" },
+    headers: { "User-Agent": "Wikipedia Speedrunning Ranked/1.0 (portfolio project)" },
     next: { revalidate: ARTICLE_CACHE_TTL_SECONDS },
   });
 
@@ -38,7 +169,7 @@ async function fetchWikipediaJson(params: URLSearchParams): Promise<WikipediaQue
     throw new ApiError(502, "WIKIPEDIA_HTTP_ERROR", `Wikipedia API responded with ${response.status}`);
   }
 
-  const payload = (await response.json()) as WikipediaQueryResponse;
+  const payload = (await response.json()) as T;
   if (payload.error) {
     throw new ApiError(502, "WIKIPEDIA_API_ERROR", payload.error.info, payload.error);
   }
@@ -58,9 +189,10 @@ function dedupeAndFilterLinks(links: Array<{ title?: string }> | undefined): Wik
       continue;
     }
 
-    if (!byNormalized.has(normalized)) {
-      byNormalized.set(normalized, {
-        title: link.title,
+    const normalizedKey = toWikiTitleKey(normalized);
+    if (!byNormalized.has(normalizedKey)) {
+      byNormalized.set(normalizedKey, {
+        title: normalized.replace(/_/g, " "),
         normalizedTitle: normalized,
       });
     }
@@ -68,16 +200,84 @@ function dedupeAndFilterLinks(links: Array<{ title?: string }> | undefined): Wik
   return Array.from(byNormalized.values());
 }
 
-function buildArticleFromPage(page: WikipediaPage): WikiArticle {
+function dedupeAndFilterParseLinks(links: WikipediaParseLink[] | undefined): WikiArticleLink[] {
+  const byNormalized = new Map<string, WikiArticleLink>();
+  for (const link of links ?? []) {
+    if (!link || typeof link["*"] !== "string") {
+      continue;
+    }
+
+    if (link.ns !== 0 || link.exists === undefined) {
+      continue;
+    }
+
+    const normalized = normalizeWikiTitle(link["*"]);
+    if (!isLikelyArticleTitle(normalized)) {
+      continue;
+    }
+
+    const normalizedKey = toWikiTitleKey(normalized);
+    if (!byNormalized.has(normalizedKey)) {
+      byNormalized.set(normalizedKey, {
+        title: normalized.replace(/_/g, " "),
+        normalizedTitle: normalized,
+      });
+    }
+  }
+
+  return Array.from(byNormalized.values());
+}
+
+function stripHtmlText(value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function fetchArticleHtmlByTitle(normalizedInputTitle: string): Promise<{
+  html: string;
+  displayTitle: string;
+  links: WikiArticleLink[];
+}> {
+  const parseQuery = new URLSearchParams({
+    action: "parse",
+    page: normalizedInputTitle,
+    prop: "text|displaytitle|links",
+    format: "json",
+    origin: "*",
+  });
+
+  const payload = await fetchWikipediaJson<WikipediaParseResponse>(parseQuery);
+  const htmlSource = payload.parse?.text?.["*"] ?? "";
+  const sanitizedHtml = sanitizeHtml(htmlSource, SANITIZE_OPTIONS);
+  const links = dedupeAndFilterParseLinks(payload.parse?.links);
+  const displayTitle = stripHtmlText(payload.parse?.displaytitle) || normalizedInputTitle.replace(/_/g, " ");
+
+  return {
+    html: sanitizedHtml,
+    displayTitle,
+    links,
+  };
+}
+
+function buildArticleFromPage(
+  page: WikipediaPage,
+  htmlPayload: { html: string; displayTitle: string; links: WikiArticleLink[] },
+): WikiArticle {
   if (!page.title) {
     throw new ApiError(404, "ARTICLE_NOT_FOUND", "Article not found");
   }
 
   const normalizedTitle = normalizeWikiTitle(page.title);
-  const links = dedupeAndFilterLinks(page.links);
+  const fallbackLinks = dedupeAndFilterLinks(page.links);
+  const links = htmlPayload.links.length > 0 ? htmlPayload.links : fallbackLinks;
   return {
     title: page.title,
     normalizedTitle,
+    displayTitle: htmlPayload.displayTitle,
+    html: htmlPayload.html,
     extract: page.extract?.trim() || "No summary available.",
     links,
     pageId: page.pageid,
@@ -91,7 +291,8 @@ export async function fetchArticleByTitle(rawTitle: string): Promise<WikiArticle
     throw new ApiError(400, "INVALID_TITLE", "Article title is required");
   }
 
-  const articleCacheKey = REDIS_KEYS.article(normalizedInputTitle.toLowerCase());
+  const cacheTitleKey = `${WIKI_RENDER_CACHE_VERSION}:${normalizedInputTitle.toLowerCase()}`;
+  const articleCacheKey = REDIS_KEYS.article(cacheTitleKey);
   const cachedArticle = await cache.get<WikiArticle>(articleCacheKey);
   if (cachedArticle) {
     return cachedArticle;
@@ -111,19 +312,20 @@ export async function fetchArticleByTitle(rawTitle: string): Promise<WikiArticle
     titles: normalizedInputTitle,
   });
 
-  const payload = await fetchWikipediaJson(query);
+  const payload = await fetchWikipediaJson<WikipediaQueryResponse>(query);
   const page = payload.query?.pages ? Object.values(payload.query.pages)[0] : undefined;
   if (!page || page.missing) {
     throw new ApiError(404, "ARTICLE_NOT_FOUND", "Article not found");
   }
 
-  const article = buildArticleFromPage(page);
-  const canonicalCacheKey = REDIS_KEYS.article(article.normalizedTitle.toLowerCase());
+  const htmlPayload = await fetchArticleHtmlByTitle(normalizedInputTitle);
+  const article = buildArticleFromPage(page, htmlPayload);
+  const canonicalCacheKey = REDIS_KEYS.article(`${WIKI_RENDER_CACHE_VERSION}:${article.normalizedTitle.toLowerCase()}`);
 
   await Promise.all([
     cache.set(articleCacheKey, article, ARTICLE_CACHE_TTL_SECONDS),
     cache.set(canonicalCacheKey, article, ARTICLE_CACHE_TTL_SECONDS),
-    cache.set(REDIS_KEYS.links(article.normalizedTitle.toLowerCase()), article.links, LINKS_CACHE_TTL_SECONDS),
+    cache.set(REDIS_KEYS.links(`${WIKI_RENDER_CACHE_VERSION}:${article.normalizedTitle.toLowerCase()}`), article.links, LINKS_CACHE_TTL_SECONDS),
   ]);
 
   return article;
@@ -131,7 +333,7 @@ export async function fetchArticleByTitle(rawTitle: string): Promise<WikiArticle
 
 export async function getOutgoingLinks(normalizedTitleOrRaw: string): Promise<WikiArticleLink[]> {
   const normalizedTitle = normalizeWikiTitle(normalizedTitleOrRaw);
-  const linksCacheKey = REDIS_KEYS.links(normalizedTitle.toLowerCase());
+  const linksCacheKey = REDIS_KEYS.links(`${WIKI_RENDER_CACHE_VERSION}:${normalizedTitle.toLowerCase()}`);
   const cached = await cache.get<WikiArticleLink[]>(linksCacheKey);
   if (cached) {
     return cached;
@@ -142,7 +344,7 @@ export async function getOutgoingLinks(normalizedTitleOrRaw: string): Promise<Wi
 }
 
 export async function isValidOutgoingLink(currentTitle: string, candidateNextTitle: string): Promise<boolean> {
-  const normalizedNextTitle = normalizeWikiTitle(candidateNextTitle);
+  const normalizedNextTitleKey = toWikiTitleKey(candidateNextTitle);
   const outgoingLinks = await getOutgoingLinks(currentTitle);
-  return outgoingLinks.some((link) => link.normalizedTitle === normalizedNextTitle);
+  return outgoingLinks.some((link) => toWikiTitleKey(link.normalizedTitle) === normalizedNextTitleKey);
 }

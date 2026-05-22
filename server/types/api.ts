@@ -1,4 +1,5 @@
 import type { ChallengeDescriptor, LeaderboardRow, RunStepInput, WikiArticle } from "@/types/domain";
+import type { MatchHistoryFilters, RunDetail, RunHistoryItem, SaveRunRequest, SaveRunResponse } from "./run-history";
 
 export interface ApiErrorObject {
   code: string;
@@ -49,10 +50,18 @@ export interface ValidateMoveResponse {
 export interface RunSubmissionRequest {
   challengeId: string;
   userId?: string;
+  /** When false, the run is stored as ABANDONED (partial route). Defaults to true. */
+  completed?: boolean;
   durationMs: number;
   clickCount: number;
   route: string[];
   steps: RunStepInput[];
+  challengeSnapshot?: {
+    label: string;
+    startTitle: string;
+    targetTitle: string;
+    difficultyScore: number;
+  };
 }
 
 export interface RunDetailResponse {
@@ -77,14 +86,28 @@ export interface RunDetailResponse {
   finishedAt: string;
 }
 
+export type {
+  SaveRunRequest,
+  SaveRunResponse,
+  RunHistoryItem,
+  RunDetail,
+  MatchHistoryFilters,
+};
+
 export interface ChallengePayload extends ChallengeDescriptor {
   description?: string;
   isActive: boolean;
   createdAt?: string;
 }
 
+export interface LeaderboardViewer {
+  rank: number;
+  rating: number;
+}
+
 export interface LeaderboardResponse {
   rows: LeaderboardRow[];
+  viewer?: LeaderboardViewer | null;
 }
 
 export type ArticleResponse = WikiArticle;

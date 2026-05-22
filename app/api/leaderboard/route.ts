@@ -1,5 +1,8 @@
+import { getSession } from "@/lib/session";
+import { DEFAULT_LEADERBOARD_SCOPE } from "@/lib/leaderboard-scopes";
 import { asApiError } from "@/server/errors/api-error";
-import { fetchLeaderboard } from "@/server/services/leaderboard-service";
+import { fetchLeaderboard, fetchViewerLeaderboardStats } from "@/server/services/leaderboard-service";
+import type { LeaderboardResponse } from "@/server/types/api";
 import { leaderboardQuerySchema } from "@/server/validation/api-schemas";
 import { NextResponse } from "next/server";
 
@@ -7,7 +10,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const parsed = leaderboardQuerySchema.safeParse({
-      scope: searchParams.get("scope") ?? "global",
+      scope: searchParams.get("scope") ?? DEFAULT_LEADERBOARD_SCOPE,
       limit: searchParams.get("limit") ?? 100,
     });
 
@@ -24,8 +27,18 @@ export async function GET(request: Request) {
       );
     }
 
-    const rows = await fetchLeaderboard(parsed.data.scope, parsed.data.limit);
-    return NextResponse.json({ rows });
+    const [rows, session] = await Promise.all([
+      fetchLeaderboard(parsed.data.scope, parsed.data.limit),
+      getSession(),
+    ]);
+
+    const payload: LeaderboardResponse = { rows };
+
+    if (session?.user?.id) {
+      payload.viewer = await fetchViewerLeaderboardStats(session.user.id, parsed.data.scope);
+    }
+
+    return NextResponse.json(payload);
   } catch (error) {
     const apiError = asApiError(error);
     return NextResponse.json(

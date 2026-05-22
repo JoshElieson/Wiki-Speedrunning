@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_LEADERBOARD_SCOPE, LEADERBOARD_SCOPES } from "@/lib/leaderboard-scopes";
 
 export const wikiArticleQuerySchema = z.object({
   title: z.string().trim().min(1, "Article title is required"),
@@ -23,26 +24,99 @@ export const validateMoveBodySchema = z.object({
   path: z.array(z.string().trim().min(1)).optional(),
 });
 
-const runStepSchema = z.object({
+const legacyRunStepSchema = z.object({
   fromTitle: z.string().trim().min(1),
   toTitle: z.string().trim().min(1),
   clickedAtOffsetMs: z.number().int().min(0),
 });
 
-export const submitRunBodySchema = z.object({
-  challengeId: z.string().trim().min(1),
-  userId: z.string().trim().optional(),
-  durationMs: z.number().int().positive(),
-  clickCount: z.number().int().min(0),
-  route: z.array(z.string().trim().min(1)).min(2),
-  steps: z.array(runStepSchema).min(1),
+const canonicalRunStepSchema = z.object({
+  stepIndex: z.number().int().min(0),
+  articleTitle: z.string().trim().min(1),
+  normalizedArticleTitle: z.string().trim().min(1).optional(),
+  elapsedMs: z.number().int().min(0),
+  articleUrl: z.string().trim().url().optional(),
+  kind: z.enum(["start", "intermediate", "target"]).optional(),
+});
+
+export const saveRunBodySchema = z
+  .object({
+    challengeId: z.string().trim().min(1),
+    userId: z.string().trim().min(1).optional().nullable(),
+    completed: z.boolean().optional(),
+    finalElapsedMs: z.number().int().min(0).optional(),
+    durationMs: z.number().int().min(0).optional(),
+    clickCount: z.number().int().min(0),
+    route: z.array(z.string().trim().min(1)).min(1),
+    steps: z.array(z.union([canonicalRunStepSchema, legacyRunStepSchema])),
+    challengeSnapshot: z
+      .object({
+        label: z.string().trim().min(1),
+        startTitle: z.string().trim().min(1),
+        targetTitle: z.string().trim().min(1),
+        difficultyScore: z.number().min(1).max(100),
+      })
+      .optional(),
+    difficultyScore: z.number().finite().optional(),
+    startedAt: z.string().datetime().optional(),
+    completedAt: z.string().datetime().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const isCompleted = value.completed !== false;
+    const elapsed = value.finalElapsedMs ?? value.durationMs;
+
+    if (elapsed === undefined || elapsed < 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["finalElapsedMs"],
+        message: "finalElapsedMs (or durationMs for legacy clients) is required",
+      });
+    } else if (isCompleted && elapsed <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["finalElapsedMs"],
+        message: "finalElapsedMs must be positive for completed runs",
+      });
+    }
+
+    if (isCompleted && value.route.length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["route"],
+        message: "Completed runs must include at least a start and target article",
+      });
+    }
+
+    const expectedClicks = value.route.length - 1;
+    if (value.clickCount !== expectedClicks) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["clickCount"],
+        message: `clickCount must match route transitions (${expectedClicks})`,
+      });
+    }
+  });
+
+export const submitRunBodySchema = saveRunBodySchema;
+
+export const runHistoryFiltersSchema = z.object({
+  userId: z.string().trim().min(1).optional(),
+  challengeId: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(20),
 });
 
 export const leaderboardQuerySchema = z.object({
-  scope: z.string().trim().default("global"),
+  scope: z.enum(LEADERBOARD_SCOPES).default(DEFAULT_LEADERBOARD_SCOPE),
   limit: z.coerce.number().int().positive().max(500).default(100),
 });
 
 export const challengeByIdQuerySchema = z.object({
   id: z.string().trim().min(1),
+});
+
+export const updateProfileBodySchema = z.object({
+  displayName: z.string().trim().min(1, "Display name is required").max(48, "Display name is too long"),
+  avatarUrl: z
+    .union([z.string().trim().url("Avatar must be a valid image URL"), z.literal(""), z.null()])
+    .optional(),
 });

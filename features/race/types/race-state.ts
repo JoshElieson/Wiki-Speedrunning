@@ -7,26 +7,33 @@ export interface RouteNode {
   visitedAtOffsetMs: number;
 }
 
+export interface RaceArticleRef {
+  title: string;
+  normalizedTitle: string;
+}
+
 export interface RaceState {
   status: RaceStatus;
   challenge: ChallengeDescriptor | null;
-  currentArticleTitle: string | null;
-  targetArticleTitle: string | null;
-  routeHistory: RouteNode[];
+  currentArticle: RaceArticleRef | null;
+  targetArticle: RaceArticleRef | null;
+  route: RouteNode[];
   clickCount: number;
-  startedAtMs: number | null;
-  finishedAtMs: number | null;
-  errorMessage: string | null;
+  startedAt: number | null;
+  completedAt: number | null;
+  elapsedMs: number;
+  error: string | null;
 }
 
 export interface RaceActions {
   setRaceLoading: () => void;
-  startRace: (challenge: ChallengeDescriptor) => void;
-  visitArticle: (title: string) => void;
+  startRace: (challenge: ChallengeDescriptor, startArticleTitle: string) => void;
+  visitArticle: (nextArticleTitle: string, normalizedTitle: string, nowMs?: number) => void;
   completeRace: () => void;
   abandonRace: () => void;
   restartRace: () => void;
   setRaceError: (message: string) => void;
-  clearRaceError: () => void;
+  clearError: () => void;
+  tickElapsed: (nowMs?: number) => void;
   resetRace: () => void;
 }

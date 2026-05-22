@@ -2,160 +2,109 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchRandomChallenge, submitRun, validateMove } from "../services/race-api";
+import { fetchWikiArticle } from "@/features/wiki/services/wiki-client";
 import { getRaceElapsedMs, useRaceStore } from "../stores/use-race-store";
-import type { ChallengeDescriptor, PersistedRun, RunSubmission, WikiArticle } from "@/types/domain";
-
-interface SubmitRunPayload extends RunSubmission {
-  challengeId: string;
-}
-
-function normalizeTitle(title: string) {
-  return title.trim().replace(/\s+/g, "_").replace(/#/g, "").toLowerCase();
-}
-
-async function fetchNextChallenge() {
-  const response = await fetch("/api/challenges/next");
-  if (!response.ok) {
-    throw new Error("Failed to load challenge");
-  }
-
-  return (await response.json()) as ChallengeDescriptor;
-}
-
-async function fetchArticle(title: string) {
-  const response = await fetch(`/api/wiki/article?title=${encodeURIComponent(title)}`);
-  if (!response.ok) {
-    throw new Error("Failed to load article");
-  }
-
-  return (await response.json()) as WikiArticle;
-}
-
-async function submitRun(payload: SubmitRunPayload) {
-  const response = await fetch("/api/runs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error("Run submission failed");
-  }
-
-  return (await response.json()) as PersistedRun;
-}
+import { toWikiTitleKey } from "@/features/wiki/services/title-normalization";
+import type { RunSubmissionRequest } from "@/server/types/api";
+import type { RunDetail } from "@/server/types/run-history";
 
 export function useRaceController() {
   const race = useRaceStore();
+  const raceStatus = race.status;
+  const setRaceError = race.setRaceError;
+  const tickElapsed = race.tickElapsed;
   const queryClient = useQueryClient();
   const [clockTick, setClockTick] = useState(0);
   const [invalidMoveTitle, setInvalidMoveTitle] = useState<string | null>(null);
   const submittedRunRef = useRef(false);
-
-  const challengeQuery = useQuery({
-    queryKey: ["challenge", "next"],
-    queryFn: fetchNextChallenge,
-    enabled: race.status === "idle" || race.status === "loading",
-    retry: 1,
-  });
+  const [pendingMoveTitle, setPendingMoveTitle] = useState<string | null>(null);
 
   const articleQuery = useQuery({
-    queryKey: ["wiki", "article", race.currentArticleTitle],
-    queryFn: () => fetchArticle(race.currentArticleTitle ?? ""),
-    enabled: Boolean(race.currentArticleTitle),
+    queryKey: ["wiki", "article", race.currentArticle?.normalizedTitle],
+    queryFn: () => fetchWikiArticle(race.currentArticle?.title ?? ""),
+    enabled: Boolean(race.currentArticle?.title),
     retry: 1,
   });
 
-  const runSubmissionMutation = useMutation({
-    mutationFn: submitRun,
+  const challengeQuery = useQuery({
+    queryKey: ["challenge", "random"],
+    queryFn: fetchRandomChallenge,
+    enabled: false,
+    retry: 1,
   });
 
+  const moveValidationMutation = useMutation({ mutationFn: validateMove });
+  const runSubmissionMutation = useMutation<RunDetail, Error, RunSubmissionRequest>({ mutationFn: submitRun });
+
   useEffect(() => {
-    if (race.status !== "active") {
+    if (raceStatus !== "active") {
       return;
     }
 
     const timer = setInterval(() => {
       setClockTick(Date.now());
+      tickElapsed();
     }, 40);
 
     return () => clearInterval(timer);
-  }, [race.status]);
+  }, [raceStatus, tickElapsed]);
 
   useEffect(() => {
-    if (race.status !== "idle") {
-      return;
-    }
-
-    race.setRaceLoading();
-  }, [race]);
-
-  useEffect(() => {
-    if (!challengeQuery.data) {
-      return;
-    }
-
-    if (race.status === "idle" || race.status === "loading") {
-      race.startRace(challengeQuery.data);
-      submittedRunRef.current = false;
-      runSubmissionMutation.reset();
-    }
-  }, [challengeQuery.data, race, runSubmissionMutation]);
-
-  useEffect(() => {
-    if (!challengeQuery.error) {
-      return;
-    }
-
-    const message = challengeQuery.error instanceof Error ? challengeQuery.error.message : "Unable to load challenge";
-    race.setRaceError(message);
-  }, [challengeQuery.error, race]);
-
-  useEffect(() => {
-    if (!articleQuery.error || race.status !== "active") {
+    if (!articleQuery.error || raceStatus !== "active") {
       return;
     }
 
     const message = articleQuery.error instanceof Error ? articleQuery.error.message : "Unable to load article";
-    race.setRaceError(message);
-  }, [articleQuery.error, race.status, race]);
+    setRaceError(message);
+  }, [articleQuery.error, raceStatus, setRaceError]);
 
   useEffect(() => {
     if (race.status !== "completed" || !race.challenge || submittedRunRef.current) {
       return;
     }
 
-    const payload: SubmitRunPayload = {
+    const payload: RunSubmissionRequest = {
       challengeId: race.challenge.id,
       durationMs: getRaceElapsedMs(race),
       clickCount: race.clickCount,
-      route: race.routeHistory.map((node) => node.title),
-      steps: race.routeHistory.slice(1).map((node, index) => ({
-        fromTitle: race.routeHistory[index].title,
+      route: race.route.map((node) => node.title),
+      steps: race.route.slice(1).map((node, index) => ({
+        fromTitle: race.route[index].title,
         toTitle: node.title,
         clickedAtOffsetMs: node.visitedAtOffsetMs,
       })),
+      challengeSnapshot: {
+        label: race.challenge.label,
+        startTitle: race.challenge.startTitle,
+        targetTitle: race.challenge.targetTitle,
+        difficultyScore: race.challenge.difficultyScore,
+      },
     };
 
     submittedRunRef.current = true;
-    runSubmissionMutation.mutate(payload);
-  }, [race, runSubmissionMutation]);
+    runSubmissionMutation.mutate(payload, {
+      onSettled: () => {
+        void queryClient.invalidateQueries({ queryKey: ["profile"] });
+      },
+    });
+  }, [queryClient, race, runSubmissionMutation]);
 
   const elapsedMs = useMemo(() => {
     if (race.status !== "active") {
       return getRaceElapsedMs(race);
     }
 
-    if (!race.startedAtMs) {
+    if (!race.startedAt) {
       return 0;
     }
 
     const now = clockTick || Date.now();
-    return Math.max(now - race.startedAtMs, 0);
+    return Math.max(now - race.startedAt, 0);
   }, [clockTick, race]);
 
   const isArticleTransitioning = useMemo(() => {
-    if (!race.currentArticleTitle) {
+    if (!race.currentArticle?.title) {
       return false;
     }
 
@@ -167,66 +116,126 @@ export function useRaceController() {
       return false;
     }
 
-    return normalizeTitle(articleQuery.data.title) !== normalizeTitle(race.currentArticleTitle);
-  }, [articleQuery.data, articleQuery.isFetching, articleQuery.isPending, race.currentArticleTitle]);
-
-  const isMoveValid = useCallback(
-    (targetTitle: string) => {
-      if (!articleQuery.data) {
-        return false;
-      }
-
-      return articleQuery.data.links.some((link) => normalizeTitle(link.normalizedTitle) === normalizeTitle(targetTitle));
-    },
-    [articleQuery.data]
-  );
+    return toWikiTitleKey(articleQuery.data.normalizedTitle) !== toWikiTitleKey(race.currentArticle.normalizedTitle);
+  }, [articleQuery.data, articleQuery.isFetching, articleQuery.isPending, race.currentArticle]);
 
   const navigateToLink = useCallback(
-    (targetTitle: string) => {
-      if (race.status !== "active") {
+    async (targetTitle: string) => {
+      if (race.status !== "active" || !race.currentArticle || !race.challenge || pendingMoveTitle) {
         return;
       }
 
-      if (!isMoveValid(targetTitle)) {
-        setInvalidMoveTitle(targetTitle);
-        return;
-      }
+      setPendingMoveTitle(targetTitle);
+      try {
+        const validation = await moveValidationMutation.mutateAsync({
+          challengeId: race.challenge.id,
+          currentTitle: race.currentArticle.title,
+          nextTitle: targetTitle,
+          targetTitle: race.targetArticle?.title,
+        });
+        if (!validation.isValid) {
+          setInvalidMoveTitle(targetTitle);
+          return;
+        }
 
-      setInvalidMoveTitle(null);
-      race.visitArticle(targetTitle);
+        setInvalidMoveTitle(null);
+        race.visitArticle(targetTitle, validation.normalizedNextTitle);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Move validation failed";
+        race.setRaceError(message);
+      } finally {
+        setPendingMoveTitle(null);
+      }
     },
-    [isMoveValid, race]
+    [moveValidationMutation, pendingMoveTitle, race]
   );
 
   const restartRace = useCallback(() => {
     submittedRunRef.current = false;
     setInvalidMoveTitle(null);
+    setPendingMoveTitle(null);
     runSubmissionMutation.reset();
+    moveValidationMutation.reset();
     race.restartRace();
     void queryClient.invalidateQueries({ queryKey: ["wiki", "article"] });
-  }, [queryClient, race, runSubmissionMutation]);
+  }, [moveValidationMutation, queryClient, race, runSubmissionMutation]);
 
-  const loadFreshChallenge = useCallback(() => {
+  const startRace = useCallback(async () => {
     submittedRunRef.current = false;
     setInvalidMoveTitle(null);
+    setPendingMoveTitle(null);
     runSubmissionMutation.reset();
+    moveValidationMutation.reset();
     race.resetRace();
     race.setRaceLoading();
-    void challengeQuery.refetch();
-  }, [challengeQuery, race, runSubmissionMutation]);
+    try {
+      const challenge = await queryClient.fetchQuery({
+        queryKey: ["challenge", "random"],
+        queryFn: fetchRandomChallenge,
+      });
+      race.startRace(challenge, challenge.startTitle);
+      await queryClient.invalidateQueries({ queryKey: ["wiki", "article"] });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load challenge";
+      race.setRaceError(message);
+    }
+  }, [moveValidationMutation, queryClient, race, runSubmissionMutation]);
 
-  const abandonRace = useCallback(() => {
-    race.abandonRace();
-  }, [race]);
+  const loadFreshChallenge = useCallback(async () => {
+    await startRace();
+  }, [startRace]);
+
+  const abandonRace = useCallback(async () => {
+    if (race.status !== "active" || !race.challenge) {
+      return;
+    }
+
+    const payload: RunSubmissionRequest = {
+      challengeId: race.challenge.id,
+      completed: false,
+      durationMs: getRaceElapsedMs(race),
+      clickCount: race.clickCount,
+      route: race.route.map((node) => node.title),
+      steps: race.route.slice(1).map((node, index) => ({
+        fromTitle: race.route[index].title,
+        toTitle: node.title,
+        clickedAtOffsetMs: node.visitedAtOffsetMs,
+      })),
+      challengeSnapshot: {
+        label: race.challenge.label,
+        startTitle: race.challenge.startTitle,
+        targetTitle: race.challenge.targetTitle,
+        difficultyScore: race.challenge.difficultyScore,
+      },
+    };
+
+    try {
+      await runSubmissionMutation.mutateAsync(payload);
+      void queryClient.invalidateQueries({ queryKey: ["profile"] });
+    } catch {
+      // Still reset local race state when persistence fails (e.g. offline).
+    } finally {
+      submittedRunRef.current = false;
+      setInvalidMoveTitle(null);
+      setPendingMoveTitle(null);
+      runSubmissionMutation.reset();
+      moveValidationMutation.reset();
+      race.abandonRace();
+      void queryClient.invalidateQueries({ queryKey: ["wiki", "article"] });
+    }
+  }, [moveValidationMutation, queryClient, race, runSubmissionMutation]);
 
   return {
     race,
     elapsedMs,
     invalidMoveTitle,
+    pendingMoveTitle,
     challengeQuery,
     articleQuery,
+    moveValidationMutation,
     runSubmissionMutation,
     isArticleTransitioning,
+    startRace,
     navigateToLink,
     restartRace,
     loadFreshChallenge,

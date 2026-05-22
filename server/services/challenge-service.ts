@@ -1,4 +1,5 @@
 import { REDIS_KEYS } from "@/db/constants";
+import { isDatabaseConfigured, isPrismaConfigError } from "@/lib/database";
 import { cache } from "@/server/cache/cache";
 import { ApiError } from "@/server/errors/api-error";
 import {
@@ -8,7 +9,15 @@ import {
   getRandomActiveChallenge,
   setDailyChallenge,
 } from "@/server/repositories/challenge-repository";
-import type { ChallengeDescriptor, DailyChallengeEntry, DailyChallengeMode, DailyChallengeSet } from "@/types/domain";
+import { PROFILE_VARIETY_CATEGORIES } from "@/lib/profile-elo-categories";
+import { VARIETY_DAILY_ARTICLE_POOLS } from "@/lib/variety-daily-pools";
+import type {
+  ChallengeDescriptor,
+  DailyChallengeEntry,
+  DailyChallengeMode,
+  DailyChallengeSet,
+  DailyVarietyChallengeEntry,
+} from "@/types/domain";
 import type { CreateChallengeRequest } from "../types/api";
 
 type ChallengeSeed = {
@@ -71,6 +80,11 @@ const DAILY_ARTICLE_POOL = [
 
 const DAILY_MODES: DailyChallengeMode[] = ["time", "clicks"];
 
+const DAILY_MODE_OBJECTIVES: Record<DailyChallengeMode, string> = {
+  time: "Reach the target as fast as possible!",
+  clicks: "Reach the target in as few clicks as possible!",
+};
+
 function inferTier(score: number): ChallengeDescriptor["difficultyTier"] {
   if (score < 45) return "novice";
   if (score < 65) return "intermediate";
@@ -91,6 +105,26 @@ function fallbackChallenge(seed: ChallengeSeed, source: "daily" | "generated", i
   };
 }
 
+function pickFallbackGeneratedChallenge(): ChallengeDescriptor {
+  const index = Math.floor(Math.random() * FALLBACK_SEEDS.length);
+  return fallbackChallenge(FALLBACK_SEEDS[index], "generated", `generated-seed-${index}`);
+}
+
+export function getFallbackChallengeById(challengeId: string): ChallengeDescriptor | null {
+  const match = /^generated-seed-(\d+)$/.exec(challengeId);
+  if (!match) {
+    return null;
+  }
+
+  const index = Number(match[1]);
+  const seed = FALLBACK_SEEDS[index];
+  if (!seed) {
+    return null;
+  }
+
+  return fallbackChallenge(seed, "generated", challengeId);
+}
+
 function hashSeed(seed: string): number {
   let hash = 0;
   for (let index = 0; index < seed.length; index += 1) {
@@ -107,23 +141,32 @@ function seededRandom(seed: string): () => number {
   };
 }
 
-function pickDailyPair(dateKey: string, mode: DailyChallengeMode, excludedPair?: string): { startTitle: string; targetTitle: string } {
-  const random = seededRandom(`${dateKey}-${mode}`);
-  const startTitle = DAILY_ARTICLE_POOL[Math.floor(random() * DAILY_ARTICLE_POOL.length)];
-  let targetTitle = DAILY_ARTICLE_POOL[Math.floor(random() * DAILY_ARTICLE_POOL.length)];
+function pickDailyPairFromPool(
+  dateKey: string,
+  seedSuffix: string,
+  pool: string[],
+  excludedPair?: string,
+): { startTitle: string; targetTitle: string } {
+  const random = seededRandom(`${dateKey}-${seedSuffix}`);
+  const startTitle = pool[Math.floor(random() * pool.length)];
+  let targetTitle = pool[Math.floor(random() * pool.length)];
 
   while (startTitle === targetTitle) {
-    targetTitle = DAILY_ARTICLE_POOL[Math.floor(random() * DAILY_ARTICLE_POOL.length)];
+    targetTitle = pool[Math.floor(random() * pool.length)];
   }
 
   if (excludedPair && `${startTitle}::${targetTitle}` === excludedPair) {
-    targetTitle = DAILY_ARTICLE_POOL[(DAILY_ARTICLE_POOL.indexOf(targetTitle) + 1) % DAILY_ARTICLE_POOL.length];
+    targetTitle = pool[(pool.indexOf(targetTitle) + 1) % pool.length];
     if (targetTitle === startTitle) {
-      targetTitle = DAILY_ARTICLE_POOL[(DAILY_ARTICLE_POOL.indexOf(targetTitle) + 1) % DAILY_ARTICLE_POOL.length];
+      targetTitle = pool[(pool.indexOf(targetTitle) + 1) % pool.length];
     }
   }
 
   return { startTitle, targetTitle };
+}
+
+function pickDailyPair(dateKey: string, mode: DailyChallengeMode, excludedPair?: string): { startTitle: string; targetTitle: string } {
+  return pickDailyPairFromPool(dateKey, mode, DAILY_ARTICLE_POOL, excludedPair);
 }
 
 function buildDailyChallengeEntry(dateKey: string, mode: DailyChallengeMode, excludedPair?: string): DailyChallengeEntry {
@@ -145,8 +188,126 @@ function buildDailyChallengeEntry(dateKey: string, mode: DailyChallengeMode, exc
 
   return {
     mode,
-    objective: mode === "time" ? "Fastest completion time wins." : "Fewest clicks wins.",
+    objective: DAILY_MODE_OBJECTIVES[mode],
     challenge,
+  };
+}
+
+function buildVarietyDailyChallengeEntry(
+  dateKey: string,
+  scope: string,
+  label: string,
+  mode: DailyChallengeMode,
+  excludedPair?: string,
+): DailyChallengeEntry {
+  const pool = VARIETY_DAILY_ARTICLE_POOLS[scope as keyof typeof VARIETY_DAILY_ARTICLE_POOLS];
+  const pair = pickDailyPairFromPool(dateKey, `variety-${scope}-${mode}`, pool, excludedPair);
+  const random = seededRandom(`difficulty-${dateKey}-variety-${scope}-${mode}`);
+  const difficultyScore = mode === "time" ? 52 + Math.floor(random() * 24) : 58 + Math.floor(random() * 22);
+  const shortestPathHint = mode === "time" ? 3 + Math.floor(random() * 3) : 2 + Math.floor(random() * 3);
+
+  return {
+    mode,
+    objective: DAILY_MODE_OBJECTIVES[mode],
+    challenge: {
+      id: `daily-variety-${scope}-${mode}-${dateKey}`,
+      label: mode === "time" ? `${label} Daily Speed Challenge` : `${label} Daily Efficiency Challenge`,
+      startTitle: pair.startTitle,
+      targetTitle: pair.targetTitle,
+      difficultyScore,
+      difficultyTier: inferTier(difficultyScore),
+      shortestPathHint,
+      source: "daily",
+    },
+  };
+}
+
+function buildVarietyDailyGroup(dateKey: string, scope: string, label: string): DailyVarietyChallengeEntry {
+  const timeEntry = buildVarietyDailyChallengeEntry(dateKey, scope, label, "time");
+  const firstPair = `${timeEntry.challenge.startTitle}::${timeEntry.challenge.targetTitle}`;
+  const clicksEntry = buildVarietyDailyChallengeEntry(dateKey, scope, label, "clicks", firstPair);
+
+  return {
+    scope,
+    label,
+    challenges: [timeEntry, clicksEntry],
+  };
+}
+
+function buildVarietyDailyChallenges(dateKey: string): DailyVarietyChallengeEntry[] {
+  return PROFILE_VARIETY_CATEGORIES.map((category) =>
+    buildVarietyDailyGroup(dateKey, category.scope, category.label),
+  );
+}
+
+function hasCompleteVarietyChallenges(entries: DailyVarietyChallengeEntry[] | undefined): boolean {
+  if (!entries?.length) {
+    return false;
+  }
+
+  return (
+    entries.length === PROFILE_VARIETY_CATEGORIES.length &&
+    entries.every((entry) => entry.challenges?.length === DAILY_MODES.length)
+  );
+}
+
+function varietyCategoryLabel(scope: string): string {
+  return PROFILE_VARIETY_CATEGORIES.find((category) => category.scope === scope)?.label ?? scope;
+}
+
+function syncVarietyChallengeLabels(entries: DailyVarietyChallengeEntry[]): DailyVarietyChallengeEntry[] {
+  return entries.map((entry) => {
+    const label = varietyCategoryLabel(entry.scope);
+    return {
+      ...entry,
+      label,
+      challenges: entry.challenges.map((challengeEntry) => ({
+        ...challengeEntry,
+        challenge: {
+          ...challengeEntry.challenge,
+          label:
+            challengeEntry.mode === "time"
+              ? `${label} Daily Speed Challenge`
+              : `${label} Daily Efficiency Challenge`,
+        },
+      })),
+    };
+  });
+}
+
+function varietyLabelsNeedSync(entries: DailyVarietyChallengeEntry[] | undefined): boolean {
+  if (!entries?.length) {
+    return false;
+  }
+
+  return entries.some((entry) => {
+    const expectedLabel = varietyCategoryLabel(entry.scope);
+    if (entry.label !== expectedLabel) {
+      return true;
+    }
+
+    return entry.challenges.some((challengeEntry) => {
+      const expectedChallengeLabel =
+        challengeEntry.mode === "time"
+          ? `${expectedLabel} Daily Speed Challenge`
+          : `${expectedLabel} Daily Efficiency Challenge`;
+      return challengeEntry.challenge.label !== expectedChallengeLabel;
+    });
+  });
+}
+
+function withVarietyChallenges(dailySet: DailyChallengeSet): DailyChallengeSet {
+  const varietyChallenges = hasCompleteVarietyChallenges(dailySet.varietyChallenges)
+    ? dailySet.varietyChallenges!
+    : buildVarietyDailyChallenges(dailySet.dateKey);
+
+  if (!varietyLabelsNeedSync(varietyChallenges)) {
+    return dailySet;
+  }
+
+  return {
+    ...dailySet,
+    varietyChallenges: syncVarietyChallengeLabels(varietyChallenges),
   };
 }
 
@@ -155,17 +316,44 @@ export async function createChallengeRecord(input: CreateChallengeRequest) {
 }
 
 export async function fetchChallengeById(challengeId: string) {
-  return getChallengeById(challengeId);
+  const fallback = getFallbackChallengeById(challengeId);
+  if (fallback) {
+    return fallback;
+  }
+
+  if (!isDatabaseConfigured()) {
+    throw new ApiError(404, "CHALLENGE_NOT_FOUND", "Challenge not found");
+  }
+
+  try {
+    return await getChallengeById(challengeId);
+  } catch (error) {
+    const fallbackAfterLookup = getFallbackChallengeById(challengeId);
+    if (fallbackAfterLookup && isPrismaConfigError(error)) {
+      return fallbackAfterLookup;
+    }
+
+    throw error;
+  }
 }
 
 export async function getNextGeneratedChallenge(): Promise<ChallengeDescriptor> {
-  const persisted = await getRandomActiveChallenge();
-  if (persisted) {
-    return persisted;
+  if (isDatabaseConfigured()) {
+    try {
+      const persisted = await getRandomActiveChallenge();
+      if (persisted) {
+        return persisted;
+      }
+    } catch (error) {
+      if (!isPrismaConfigError(error) && process.env.NODE_ENV === "production") {
+        throw error;
+      }
+
+      console.warn("[challenge-service] Database unavailable; using built-in solo challenges.", error);
+    }
   }
 
-  const index = Math.floor(Math.random() * FALLBACK_SEEDS.length);
-  return fallbackChallenge(FALLBACK_SEEDS[index], "generated", `generated-seed-${index}`);
+  return pickFallbackGeneratedChallenge();
 }
 
 export async function getDailyChallenge(date = new Date()): Promise<ChallengeDescriptor> {
@@ -182,7 +370,11 @@ export async function getDailyChallenges(date = new Date()): Promise<DailyChalle
   const cacheKey = REDIS_KEYS.daily(dateKey);
   const cached = await cache.get<DailyChallengeSet>(cacheKey);
   if (cached) {
-    return cached;
+    const dailySet = withVarietyChallenges(cached);
+    if (dailySet !== cached) {
+      await cache.set(cacheKey, dailySet, 24 * 60 * 60);
+    }
+    return dailySet;
   }
 
   const persisted = await getDailyChallengeByDateKey(dateKey);
@@ -193,11 +385,12 @@ export async function getDailyChallenges(date = new Date()): Promise<DailyChalle
       challenges: [
         {
           mode: "time",
-          objective: "Fastest completion time wins.",
+          objective: DAILY_MODE_OBJECTIVES.time,
           challenge: { ...persisted, id: `daily-time-${dateKey}`, label: "Daily Speed Challenge", source: "daily" },
         },
         generatedClicks,
       ],
+      varietyChallenges: buildVarietyDailyChallenges(dateKey),
     };
     await cache.set(cacheKey, dailySet, 24 * 60 * 60);
     return dailySet;
@@ -213,7 +406,11 @@ export async function getDailyChallenges(date = new Date()): Promise<DailyChalle
     entries.push(entry);
   }
 
-  const dailySet: DailyChallengeSet = { dateKey, challenges: entries };
+  const dailySet: DailyChallengeSet = {
+    dateKey,
+    challenges: entries,
+    varietyChallenges: buildVarietyDailyChallenges(dateKey),
+  };
   await cache.set(cacheKey, dailySet, 24 * 60 * 60);
   return dailySet;
 }
@@ -231,7 +428,7 @@ export async function assignDailyChallenge(dateKey: string, challengeId: string)
     challenges: [
       {
         mode: "time",
-        objective: "Fastest completion time wins.",
+        objective: DAILY_MODE_OBJECTIVES.time,
         challenge: {
           ...timeChallenge,
           id: `daily-time-${dateKey}`,
@@ -241,6 +438,7 @@ export async function assignDailyChallenge(dateKey: string, challengeId: string)
       },
       clicksEntry,
     ],
+    varietyChallenges: buildVarietyDailyChallenges(dateKey),
   };
   await cache.set(REDIS_KEYS.daily(dateKey), dailySet, 24 * 60 * 60);
 }

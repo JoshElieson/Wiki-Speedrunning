@@ -8,6 +8,8 @@ export interface WikiArticleLink {
 export interface WikiArticle {
   title: string;
   normalizedTitle: string;
+  displayTitle: string;
+  html: string;
   extract: string;
   links: WikiArticleLink[];
   url: string;
@@ -33,9 +35,16 @@ export interface DailyChallengeEntry {
   challenge: ChallengeDescriptor;
 }
 
+export interface DailyVarietyChallengeEntry {
+  scope: string;
+  label: string;
+  challenges: DailyChallengeEntry[];
+}
+
 export interface DailyChallengeSet {
   dateKey: string;
   challenges: DailyChallengeEntry[];
+  varietyChallenges: DailyVarietyChallengeEntry[];
 }
 
 export interface RunStepInput {
@@ -71,23 +80,36 @@ export interface MoveValidationResult {
 export interface LeaderboardRow {
   rank: number;
   username: string;
+  displayName?: string | null;
   rating: number;
   bestTimeMs: number;
   runs: number;
 }
 
+export interface ProfileCategoryElo {
+  scope: string;
+  label: string;
+  rating: number;
+}
+
 export interface ProfileSnapshot {
   username: string;
   displayName: string;
+  avatarUrl: string | null;
   rating: number;
+  categoryElos: ProfileCategoryElo[];
   bestTimeMs: number;
   totalRuns: number;
   wins: number;
   recentRuns: {
     id: string;
     challengeLabel: string;
+    status: "COMPLETED" | "ABANDONED" | "DISQUALIFIED";
     durationMs: number;
     clickCount: number;
+    score: number;
+    difficultyScore: number;
+    route: string[];
     createdAt: string;
   }[];
 }

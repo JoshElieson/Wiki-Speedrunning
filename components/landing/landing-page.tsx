@@ -6,6 +6,8 @@ import { ArrowRight, Flag, MousePointerClick, Timer, Trophy } from "lucide-react
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { RotatingHeroWord } from "@/components/landing/rotating-hero-word";
+import { HERO_ROTATING_WORDS } from "@/lib/profile-elo-categories";
 
 const howToPlaySteps = [
   {
@@ -37,10 +39,12 @@ export function LandingPage() {
         <div className="w-full space-y-6">
           <Badge variant="neutral">Wikipedia Link Racing</Badge>
           <h1 className="text-balance text-4xl font-semibold tracking-tight text-[var(--foreground)] md:text-6xl">
-            Race through Wikipedia.
+            <span className="inline-flex flex-wrap items-baseline justify-center gap-x-[0.28em]">
+              Race through <RotatingHeroWord words={HERO_ROTATING_WORDS} />
+            </span>
           </h1>
-          <p className="whitespace-nowrap text-lg text-[var(--muted)]">
-            Start on one article. Reach the target using only Wikipedia links. Every click counts.
+          <p className="text-balance text-lg text-[var(--muted)]">
+            Start from one page. Reach the target using only in-world links. Every click counts.
           </p>
           <div className="flex flex-wrap justify-center gap-3">
             <Link href="/race">
@@ -87,16 +91,19 @@ export function LandingPage() {
         <h2 className="text-xl font-semibold tracking-tight text-[var(--foreground)]">Why people compete</h2>
         <div className="grid gap-3 md:grid-cols-3">
           <ProofCard
+            href="/daily"
             title="Daily challenge"
             description="Compete on the same start and target each day."
             line="One puzzle. Everyone races it."
           />
           <ProofCard
+            href="/leaderboard"
             title="Leaderboard"
             description="Fast routes and clean decisions climb the rank."
             line="#1 graphsprinter · 2142"
           />
           <ProofCard
+            href="/profile"
             title="Route breakdown"
             description="See the exact path you took after every run."
             line="Internet -> ... -> Graph theory"
@@ -107,17 +114,29 @@ export function LandingPage() {
   );
 }
 
-function ProofCard({ title, description, line }: { title: string; description: string; line: string }) {
+function ProofCard({
+  href,
+  title,
+  description,
+  line,
+}: {
+  href: string;
+  title: string;
+  description: string;
+  line: string;
+}) {
   return (
-    <Card className="p-5" interactive>
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="text-base font-semibold text-[var(--foreground)]">{title}</h3>
-        <Trophy size={16} className="text-[var(--accent)]" />
-      </div>
-      <p className="mt-2 text-sm text-[var(--muted)]">{description}</p>
-      <p className="mt-4 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-elevated)] px-3 py-2 text-sm text-[var(--muted)]">
-        {line}
-      </p>
-    </Card>
+    <Link href={href} className="block rounded-[var(--radius-md)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
+      <Card className="p-5" interactive>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-base font-semibold text-[var(--foreground)]">{title}</h3>
+          <Trophy size={16} className="text-[var(--accent)]" />
+        </div>
+        <p className="mt-2 text-sm text-[var(--muted)]">{description}</p>
+        <p className="mt-4 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-elevated)] px-3 py-2 text-sm text-[var(--muted)]">
+          {line}
+        </p>
+      </Card>
+    </Link>
   );
 }

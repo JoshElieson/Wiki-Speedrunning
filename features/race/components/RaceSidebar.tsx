@@ -12,7 +12,7 @@ interface RaceSidebarProps {
   status: RaceStatus;
   clickCount: number;
   remainingHint: number | null;
-  routeHistory: RouteNode[];
+  route: RouteNode[];
   onAbandon: () => void;
   onRestart: () => void;
   onNewChallenge: () => void;
@@ -23,7 +23,7 @@ export function RaceSidebar({
   status,
   clickCount,
   remainingHint,
-  routeHistory,
+  route,
   onAbandon,
   onRestart,
   onNewChallenge,
@@ -64,7 +64,7 @@ export function RaceSidebar({
       <Card className="p-5">
         <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Route Trail</p>
         <div className="mt-3">
-          <RouteTrail routeHistory={routeHistory} />
+          <RouteTrail route={route} />
         </div>
       </Card>
     </aside>

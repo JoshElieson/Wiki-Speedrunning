@@ -1,99 +1,116 @@
-# WikiRush Architecture Plan (Phase 1 Foundation)
+# Wikipedia Speedrunning Ranked Architecture
 
-## Product Positioning
-WikiRush is a competitive knowledge-graph racing platform, not a timer-only Wikipedia clone. The first release focuses on a polished solo race loop while preserving extension points for multiplayer, replay, and ranked systems.
+Wikipedia Speedrunning Ranked is a Wikipedia-link racing system built around graph traversal mechanics.
+Players move from a start article to a target article using only internal Wikipedia links, and each run is scored by speed and path efficiency.
 
-## Folder Structure
+## Design Goals
+
+- Keep the solo race loop fast and deterministic.
+- Treat Wikipedia navigation as a first-class graph problem.
+- Persist enough run detail to support replay and ghost systems.
+- Separate service orchestration from data-access concerns.
+- Prepare for realtime multiplayer without a schema rewrite.
+
+## High-Level System Flow
+
+1. Client requests a generated or daily challenge.
+2. Race state initializes in a local Zustand store.
+3. Client fetches article content and outgoing links through API routes.
+4. Player clicks through internal links; route state records each step.
+5. On completion, run payload is validated and persisted via Prisma.
+6. Leaderboard data is served through cached backend reads.
+
+## Repository Layout
 
 ```txt
-app/
-  (marketing)/
-  race/
-  daily/
-  leaderboard/
-  profile/[username]/
-  runs/[id]/
-  challenges/
-  api/
-components/
-  ui/
-  layout/
-features/
-  race/
-  wiki/
-  leaderboard/
-  profile/
-  challenges/
-  replay/
+app/                 # Next.js App Router pages + API routes
+components/          # Shared UI building blocks
+features/            # Domain modules (race, wiki, challenges)
 server/
-  services/
-  repositories/
-lib/
-  env.ts
-  prisma.ts
-  redis.ts
-  query-client.ts
-db/
-  constants.ts
-types/
-utils/
-prisma/
+  services/          # Business orchestration
+  repositories/      # Prisma data access
+  cache/             # Cache abstraction layer
+  validation/        # Zod schemas for API payloads
+lib/                 # Prisma/Redis/query client wiring
+db/                  # Shared constants (cache keys, defaults)
+prisma/              # PostgreSQL schema
+types/               # Shared frontend/backend domain types
 ```
 
-## Data Model (Prisma)
-- `User`: account identity, profile stats, rating values.
-- `Article`: normalized Wikipedia nodes with metadata.
-- `Challenge`: start/target pair and deterministic seed.
-- `DailyChallenge`: UTC date-indexed challenge.
-- `Run`: durable completion records with anti-cheat metadata.
-- `RunStep`: ordered traversal edges in each run.
-- `LeaderboardEntry`: denormalized ranking rows for fast reads.
-- `RatingRecord`: ELO/MMR history for transparency.
-- `ReplayMetadata`: replay payload and visualization hooks.
-- `RaceRoom` + `RaceParticipant`: multiplayer-ready room state.
+## Domain Model
 
-## Core Backend Boundaries
-- `features/wiki/services/wiki-service.ts`: Wikipedia API client + normalization + link extraction.
-- `features/challenges/services/challenge-service.ts`: challenge selection and difficulty heuristics.
-- `server/services/run-service.ts`: run validation, persistence orchestration, leaderboard updates.
-- `server/repositories/*`: future SQL/Redis persistence adapters.
+- `Article`: normalized Wikipedia article record and metadata.
+- `Challenge`: start and target pair, difficulty metadata, challenge source.
+- `DailyChallenge`: date-bound assignment for consistent daily competition.
+- `Run`: completed run summary (time, clicks, score, status).
+- `RunStep`: ordered traversal edges for route replay capability.
+- `LeaderboardEntry`: denormalized ranking rows.
+- `ReplayMetadata`: replay payload slot for future timeline playback.
+- `RaceRoom` and `RaceParticipant`: multiplayer-ready room model.
 
-## Caching Strategy
-- Redis key families:
-  - `wiki:article:{normalizedTitle}` for article payloads
-  - `wiki:links:{normalizedTitle}` for link adjacency
-  - `challenge:daily:{yyyy-mm-dd}` for daily challenge snapshots
-  - `leaderboard:{scope}` sorted sets for rank reads
-  - `race:active:{roomId}` for live multiplayer state (phase 2)
-- Graceful fallback to in-memory cache in local/dev.
+## Service Boundaries
 
-## API Route Design (Phase 1)
-- `GET /api/wiki/article?title=`: fetch normalized article + internal links
-- `GET /api/challenges/next`: returns generated challenge pair
-- `GET /api/daily`: returns daily challenge payload
-- `GET /api/leaderboard`: global leaderboard preview
-- `GET /api/profile/[username]`: user profile + recent runs
-- `POST /api/runs`: submit completed run payload
+- `server/services/wiki/wikipedia-service.ts`
+  - Wikipedia API access, title normalization, link extraction, cache hydration.
+- `server/services/race/route-validation-service.ts`
+  - Validates that submitted traversal follows legal outgoing links.
+- `server/services/run-service.ts`
+  - Validates run payloads, computes score, orchestrates persistence.
+- `server/services/challenge-service.ts`
+  - Generates challenge seeds and deterministic daily challenge sets.
+- `server/services/leaderboard-service.ts`
+  - Cached leaderboard retrieval.
 
-## Race State Model (Zustand)
-- `status`: idle | active | completed | abandoned
-- `challenge`: current start/target metadata
-- `currentArticle`: currently viewed article node
-- `route`: ordered traversal history
-- `startedAtMs` / `finishedAtMs`
-- selectors for elapsed time, click count, completion checks
+## Cache Strategy
 
-## Frontend Page Structure
-- `/`: marketing homepage with live product sections
-- `/race`: active race cockpit (article, timer, route, controls)
-- `/daily`: daily challenge card + rank context
-- `/leaderboard`: global rankings + filters placeholder
-- `/profile/[username]`: stats, run history, progression cards
-- `/runs/[id]`: result + replay/graph placeholder
-- `/challenges`: challenge browser and queue starter
+Wikipedia Speedrunning Ranked uses layered cache clients:
 
-## Extension Points (Phase 2 Ready)
-- Socket gateway boundary and room state contract already typed.
-- Run/replay schemas include graph metadata stubs.
-- Rating and race room tables can be activated without schema rewrite.
-- Route visualization section reserves hooks for D3/visx graph overlays.
+- Primary: Redis (`REDIS_URL`) or Upstash Redis (`UPSTASH_*`).
+- Fallback: in-memory cache in local/dev environments.
+
+Key families:
+
+- `wiki:article:{normalizedTitle}`
+- `wiki:links:{normalizedTitle}`
+- `challenge:daily:{yyyy-mm-dd}`
+- `leaderboard:{scope}:{limit}`
+- `race:active:{roomId}` (reserved for multiplayer state)
+
+## API Surface
+
+- `GET /api/wiki/article?title=`: article summary + valid outgoing links.
+- `POST /api/moves/validate`: server-side link-move validation.
+- `GET /api/challenges/next`: generated challenge.
+- `GET /api/daily`: daily challenge set.
+- `GET /api/leaderboard`: ranked rows.
+- `POST /api/runs`: submit completed run.
+- `GET /api/runs/[id]`: run detail by id.
+
+## Frontend State and Data Fetching
+
+- Zustand (`features/race/stores/use-race-store.ts`) holds active race state:
+  - `status`, challenge metadata, current article, route history, clock fields.
+- TanStack Query handles API reads/writes:
+  - challenge retrieval, article retrieval, run submission mutations, and cache invalidation.
+
+## Current Implementation Status
+
+### Completed
+
+- Solo race loop, route tracking, and run submission pipeline.
+- Challenge generation (daily + generated fallback paths).
+- Wikipedia link fetch and normalized outgoing-link handling.
+- Prisma-backed persistence for runs/challenges/articles.
+- Leaderboard read path with caching.
+
+### In Progress
+
+- Run replay UI beyond basic route timeline scaffolding.
+- Profile and run-detail backend parity across all views.
+
+### Planned
+
+- Ghost race playback against previous runs.
+- Realtime multiplayer race rooms and synchronization.
+- Enhanced analytics for route quality and decision points.
+- Ranked season systems and richer challenge generation heuristics.
