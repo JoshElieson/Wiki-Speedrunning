@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const DUMMY_PLAYER_POOL_SIZE = 100;
 
 const LEADERBOARD_SCOPES = [
   "wikipedia",
@@ -12,30 +11,18 @@ const LEADERBOARD_SCOPES = [
   "marvel",
 ];
 
-const USERNAME_PREFIXES = [
-  "wiki",
-  "link",
-  "page",
-  "graph",
-  "route",
-  "cite",
-  "hop",
-  "dash",
-  "speed",
-  "click",
-];
-
-const USERNAME_SUFFIXES = [
-  "sprinter",
-  "runner",
-  "master",
-  "hawk",
-  "fox",
-  "bolt",
-  "ace",
-  "pro",
-  "knight",
-  "sage",
+/** Score columns map to LEADERBOARD_SCOPES in order (Wikipedia, then variety categories). */
+const NAMED_DUMMY_PLAYERS = [
+  { displayName: "WikiRacer42", ratings: [1180, 940, 1325, 760, 1110, 1245] },
+  { displayName: "MarbleFox", ratings: [690, 1045, 1280, 515, 875, 1195] },
+  { displayName: "PixelSprint", ratings: [1350, 1210, 980, 1125, 745, 1305] },
+  { displayName: "NeonAnchor", ratings: [430, 860, 1095, 1255, 100, 970] },
+  { displayName: "AtlasClicker", ratings: [1015, 770, 1160, 1340, 890, 1230] },
+  { displayName: "LunarRoute", ratings: [560, 1120, 665, 985, 1290, 805] },
+  { displayName: "RapidMango", ratings: [920, 1315, 710, 1040, 1175, 620] },
+  { displayName: "CloverPath", ratings: [1260, 1085, 450, 790, 1335, 990] },
+  { displayName: "EchoRunner", ratings: [875, 1205, 610, 1065, 138, 1140] },
+  { displayName: "VertexPanda", ratings: [735, 1295, 1025, 845, 1188, 555] },
 ];
 
 const seeds = [
@@ -58,41 +45,26 @@ function hashString(input) {
   return hash;
 }
 
-function capitalize(word) {
-  return word.charAt(0).toUpperCase() + word.slice(1);
-}
-
-function scopeRating(scope, playerIndex) {
-  const maxRating = 1300;
-  const minRating = 50;
-  const spread = DUMMY_PLAYER_POOL_SIZE - 1;
-  if (playerIndex === 0) {
-    return maxRating;
-  }
-  if (playerIndex === spread) {
-    return minRating;
-  }
-  const slope = (maxRating - minRating) / spread;
-  const baseline = Math.round(maxRating - slope * playerIndex);
-  const jitter = (hashString(`${scope}:${playerIndex}`) % 61) - 30;
-  return Math.max(minRating, Math.min(maxRating, baseline + jitter));
+function slugifyUsername(displayName) {
+  const slug = displayName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 24);
+  return slug.length > 0 ? slug : "runner";
 }
 
 function buildSeedPlayers() {
-  return Array.from({ length: DUMMY_PLAYER_POOL_SIZE }, (_, index) => {
-    const prefix = USERNAME_PREFIXES[index % USERNAME_PREFIXES.length];
-    const suffix = USERNAME_SUFFIXES[Math.floor(index / USERNAME_PREFIXES.length) % USERNAME_SUFFIXES.length];
-    const username = `${prefix}${suffix}`.toLowerCase();
-    const displayName = `${capitalize(prefix)} ${capitalize(suffix)}`;
+  return NAMED_DUMMY_PLAYERS.map((player) => {
+    const username = slugifyUsername(player.displayName);
     const ratingsByScope = Object.fromEntries(
-      LEADERBOARD_SCOPES.map((scope) => [scope, scopeRating(scope, index)]),
+      LEADERBOARD_SCOPES.map((scope, index) => [scope, player.ratings[index]]),
     );
-    const bestTimeMs = 34_000 + index * 410 + (hashString(username) % 3_800);
-    const runs = Math.max(12, 210 - index * 2);
+    const bestTimeMs = 34_000 + (hashString(username) % 18_000);
+    const runs = 40 + (hashString(`${username}:runs`) % 120);
 
     return {
       username,
-      displayName,
+      displayName: player.displayName,
       avatarUrl: `https://api.dicebear.com/7.x/avataaars/png?seed=${encodeURIComponent(username)}&size=144`,
       ratingsByScope,
       bestTimeMs,
@@ -195,13 +167,13 @@ async function main() {
         create: {
           scope,
           userId: user.id,
-          rank: ranksByScope[scope].get(player.username) ?? DUMMY_PLAYER_POOL_SIZE,
+          rank: ranksByScope[scope].get(player.username) ?? players.length,
           rating: player.ratingsByScope[scope],
           bestTimeMs: player.bestTimeMs,
           bestScore: player.runs,
         },
         update: {
-          rank: ranksByScope[scope].get(player.username) ?? DUMMY_PLAYER_POOL_SIZE,
+          rank: ranksByScope[scope].get(player.username) ?? players.length,
           rating: player.ratingsByScope[scope],
           bestTimeMs: player.bestTimeMs,
           bestScore: player.runs,

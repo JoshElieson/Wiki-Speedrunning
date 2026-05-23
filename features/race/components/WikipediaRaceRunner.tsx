@@ -292,6 +292,8 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
       return;
     }
 
+    const startFromUrl = safeTitleParam(searchParams.get("start"));
+    const targetFromUrl = safeTitleParam(searchParams.get("target"));
     const articleFromUrl = safeTitleParam(searchParams.get("article"));
     const isBrowserHistoryNavigationInFlight =
       status === "active" &&
@@ -318,9 +320,12 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
     nextParams.set("article", currentTitle);
     const shouldPushHistoryEntry =
       status === "active" &&
-      titleEquals(searchParams.get("start"), startTitle) &&
-      titleEquals(searchParams.get("target"), targetTitle) &&
-      !titleEquals(searchParams.get("article"), currentTitle);
+      startFromUrl !== null &&
+      targetFromUrl !== null &&
+      articleFromUrl !== null &&
+      titleEquals(startFromUrl, startTitle) &&
+      titleEquals(targetFromUrl, targetTitle) &&
+      !titleEquals(articleFromUrl, currentTitle);
 
     const nextUrl = `/race?${nextParams.toString()}`;
     if (pendingUrlSyncRef.current === nextUrl) {
