@@ -54,10 +54,19 @@ export interface LegacyRunTransitionStep {
   clickedAtOffsetMs: number;
 }
 
+export interface SaveRunChallengeSnapshot {
+  label: string;
+  startTitle: string;
+  targetTitle: string;
+  difficultyScore: number;
+  shortestPathHint?: number;
+}
+
 export interface SaveRunRequest {
   userId?: string | null;
   challengeId: string;
   wikiMode?: import("@/lib/wiki-modes").WikiModeId;
+  challengeSnapshot?: SaveRunChallengeSnapshot;
   completed: boolean;
   finalElapsedMs: number;
   clickCount: number;

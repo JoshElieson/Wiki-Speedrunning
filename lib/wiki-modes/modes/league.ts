@@ -68,8 +68,6 @@ export const leagueWikiMode: WikiModeConfig = createBaseMediaWikiMode({
 
     ...BASE_DISALLOWED_PREFIXES,
 
-    "Universe:",
-
     "Template talk:",
 
     "User talk:",

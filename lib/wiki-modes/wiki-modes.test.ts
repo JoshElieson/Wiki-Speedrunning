@@ -78,6 +78,15 @@ describe("wiki mode registry", () => {
       mode.extractTitleFromHref("https://wiki.leagueoflegends.com/en-us/Nexus"),
       "Nexus",
     );
+    assert.equal(
+      mode.extractTitleFromHref("https://wiki.leagueoflegends.com/en-us/Universe:Taliyah"),
+      "Universe:Taliyah",
+    );
+    assert.equal(
+      mode.extractTitleFromHref("https://wiki.leagueoflegends.com/en-us/Universe:Rek%27Sai"),
+      "Universe:Rek'Sai",
+    );
+    assert.equal(isLikelyModeArticleTitle("league", "Universe: Xolan"), true);
     assert.equal(mode.extractTitleFromHref("https://leagueoflegends.fandom.com/wiki/Garen"), null);
     assert.match(mode.reader.styleSheetHrefs?.[0] ?? "", /wiki\.leagueoflegends\.com\/en-us\/load\.php/);
   });

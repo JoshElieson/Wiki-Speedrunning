@@ -761,6 +761,9 @@ export async function fetchRandomWikiArticleTitles(modeId: WikiModeId, limit: nu
       if (!isLikelyModeArticleTitle(modeId, normalized)) {
         continue;
       }
+      if (modeId === "league" && normalized.toUpperCase().startsWith("UNIVERSE:")) {
+        continue;
+      }
       const key = toWikiTitleKey(normalized);
       if (seen.has(key)) {
         continue;

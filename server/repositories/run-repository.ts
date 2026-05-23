@@ -2,7 +2,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/server/errors/api-error";
 import type { MatchHistoryFilters, RoutePathData, RoutePathNode, RunDetail, RunHistoryItem, RunStepDetail } from "@/server/types/run-history";
-import { normalizeWikiTitle } from "@/server/services/wiki/title-normalization";
+import { getWikiModeId } from "@/lib/wiki-modes";
+import { normalizeTitleForWiki } from "@/server/services/wiki/title-normalization";
 import { ensureArticleRecord } from "./wiki-repository";
 
 interface SaveRunInput {
@@ -114,7 +115,7 @@ function buildRoutePathData(input: SaveRunInput, articleRecordMap: Map<string, A
   return {
     version: "route_path_v1",
     nodes: input.routeSteps.map((step, index) => {
-      const articleRecord = articleRecordMap.get(normalizeWikiTitle(step.articleTitle));
+      const articleRecord = articleRecordMap.get(normalizeTitleForWiki(step.articleTitle, getWikiModeId(input.wikiMode)));
       if (!articleRecord) {
         throw new ApiError(500, "ARTICLE_MAPPING_ERROR", "Failed to map route articles for route path persistence");
       }
@@ -211,11 +212,12 @@ async function fetchRunRecordById(runId: string) {
 }
 
 export async function saveRun(input: SaveRunInput): Promise<RunDetail> {
+  const wikiModeId = getWikiModeId(input.wikiMode);
   const articleRecordMap = new Map<string, Awaited<ReturnType<typeof ensureArticleRecord>>>();
   for (const routeStep of input.routeSteps) {
-    const normalized = normalizeWikiTitle(routeStep.articleTitle);
+    const normalized = normalizeTitleForWiki(routeStep.articleTitle, wikiModeId);
     if (!articleRecordMap.has(normalized)) {
-      const articleRecord = await ensureArticleRecord(routeStep.articleTitle);
+      const articleRecord = await ensureArticleRecord(routeStep.articleTitle, wikiModeId);
       articleRecordMap.set(normalized, articleRecord);
     }
   }
@@ -236,8 +238,8 @@ export async function saveRun(input: SaveRunInput): Promise<RunDetail> {
       steps: {
         create: input.routeSteps.slice(0, -1).map((fromStep, index) => {
           const toStep = input.routeSteps[index + 1];
-          const fromArticle = articleRecordMap.get(normalizeWikiTitle(fromStep.articleTitle));
-          const toArticle = articleRecordMap.get(normalizeWikiTitle(toStep.articleTitle));
+          const fromArticle = articleRecordMap.get(normalizeTitleForWiki(fromStep.articleTitle, wikiModeId));
+          const toArticle = articleRecordMap.get(normalizeTitleForWiki(toStep.articleTitle, wikiModeId));
           if (!fromArticle || !toArticle) {
             throw new ApiError(500, "ARTICLE_MAPPING_ERROR", "Failed to map route articles for run steps");
           }

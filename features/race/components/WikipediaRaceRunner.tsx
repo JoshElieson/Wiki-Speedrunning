@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -65,6 +65,7 @@ function buildFallbackChallenge(startTitle: string, targetTitle: string, modeId:
 
 export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRaceRunnerProps) {
   const wikiMode = getWikiMode(modeId);
+  const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { elapsedMs, getElapsedMs, start: startTimer, stop: stopTimer, reset: resetTimer } = useRaceTimer();
@@ -198,13 +199,14 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
       onSuccess: (persistedRun) => {
         setSavedRun(persistedRun);
         setSubmitError(null);
+        void queryClient.invalidateQueries({ queryKey: ["profile"] });
       },
       onError: (error) => {
         const message = error instanceof Error ? error.message : "Run finished, but saving failed.";
         setSubmitError(message);
       },
     });
-  }, [buildRunSubmissionPayload, challenge, getElapsedMs, runSubmissionMutation, status, stopTimer]);
+  }, [buildRunSubmissionPayload, challenge, getElapsedMs, queryClient, runSubmissionMutation, status, stopTimer]);
 
   const isArticleLoading = articleQuery.isPending || articleQuery.isFetching;
   const isInteractionBlocked = isArticleLoading || status !== "active";
@@ -527,7 +529,9 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
         },
       };
 
-      void runSubmissionMutation.mutateAsync(payload).catch(() => {
+      void runSubmissionMutation.mutateAsync(payload).finally(() => {
+        void queryClient.invalidateQueries({ queryKey: ["profile"] });
+      }).catch(() => {
         // Persistence is best-effort; navigation must not wait on the API.
       });
     }
@@ -538,6 +542,7 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
     clickCount,
     elapsedMs,
     modeId,
+    queryClient,
     returnToSelection,
     route,
     runSubmissionMutation,

@@ -1,7 +1,11 @@
 import { ApiError } from "@/server/errors/api-error";
 import type { RunStepInput } from "@/types/domain";
 import { getWikiModeId, type WikiModeId } from "@/lib/wiki-modes";
-import { normalizeWikiTitle, raceTargetTitleMatches, toWikiTitleKey } from "@/server/services/wiki/title-normalization";
+import {
+  normalizeTitleForWiki,
+  raceTargetMatchesForWiki,
+  toTitleKeyForWiki,
+} from "@/server/services/wiki/title-normalization";
 import { isValidOutgoingLinkForWiki } from "@/server/services/wiki/wiki-provider";
 
 export interface RouteValidationInput {
@@ -19,17 +23,17 @@ export interface RouteValidationResult {
 }
 
 export async function validateMove(currentTitle: string, nextTitle: string, targetTitle?: string, wikiId?: WikiModeId) {
-  const normalizedCurrentTitle = normalizeWikiTitle(currentTitle);
-  const normalizedNextTitle = normalizeWikiTitle(nextTitle);
-  const normalizedTargetTitle = targetTitle ? normalizeWikiTitle(targetTitle) : undefined;
+  const normalizedWikiId = getWikiModeId(wikiId);
+  const normalizedCurrentTitle = normalizeTitleForWiki(currentTitle, normalizedWikiId);
+  const normalizedNextTitle = normalizeTitleForWiki(nextTitle, normalizedWikiId);
+  const normalizedTargetTitle = targetTitle ? normalizeTitleForWiki(targetTitle, normalizedWikiId) : undefined;
 
   if (!normalizedCurrentTitle || !normalizedNextTitle) {
     throw new ApiError(400, "INVALID_MOVE", "Current and next article titles are required");
   }
 
-  const normalizedWikiId = getWikiModeId(wikiId);
   const isValid = await isValidOutgoingLinkForWiki(normalizedWikiId, normalizedCurrentTitle, normalizedNextTitle);
-  const completed = Boolean(targetTitle && isValid && raceTargetTitleMatches(nextTitle, targetTitle));
+  const completed = Boolean(targetTitle && isValid && raceTargetMatchesForWiki(nextTitle, targetTitle, normalizedWikiId));
 
   return {
     isValid,
@@ -43,10 +47,10 @@ export async function validateMove(currentTitle: string, nextTitle: string, targ
 
 export async function validateCompletedRoute(input: RouteValidationInput): Promise<RouteValidationResult> {
   const wikiId = getWikiModeId(input.wikiId);
-  const startTitle = normalizeWikiTitle(input.challengeStartTitle);
-  const startTitleKey = toWikiTitleKey(startTitle);
-  const normalizedRoute = input.route.map((title) => normalizeWikiTitle(title));
-  const normalizedRouteKeys = normalizedRoute.map((title) => toWikiTitleKey(title));
+  const startTitle = normalizeTitleForWiki(input.challengeStartTitle, wikiId);
+  const startTitleKey = toTitleKeyForWiki(startTitle, wikiId);
+  const normalizedRoute = input.route.map((title) => normalizeTitleForWiki(title, wikiId));
+  const normalizedRouteKeys = normalizedRoute.map((title) => toTitleKeyForWiki(title, wikiId));
 
   if (normalizedRoute.length < 2) {
     throw new ApiError(400, "INVALID_ROUTE", "Route must contain at least two pages");
@@ -57,7 +61,7 @@ export async function validateCompletedRoute(input: RouteValidationInput): Promi
   }
 
   const routeEndTitle = input.route[input.route.length - 1] ?? "";
-  if (!raceTargetTitleMatches(routeEndTitle, input.challengeTargetTitle)) {
+  if (!raceTargetMatchesForWiki(routeEndTitle, input.challengeTargetTitle, wikiId)) {
     throw new ApiError(400, "INVALID_ROUTE_END", "Route does not end at challenge target article");
   }
 
@@ -69,10 +73,13 @@ export async function validateCompletedRoute(input: RouteValidationInput): Promi
     const step = input.steps[index];
     const expectedFrom = normalizedRoute[index];
     const expectedTo = normalizedRoute[index + 1];
-    const fromTitle = normalizeWikiTitle(step.fromTitle);
-    const toTitle = normalizeWikiTitle(step.toTitle);
+    const fromTitle = normalizeTitleForWiki(step.fromTitle, wikiId);
+    const toTitle = normalizeTitleForWiki(step.toTitle, wikiId);
 
-    if (toWikiTitleKey(fromTitle) !== toWikiTitleKey(expectedFrom) || toWikiTitleKey(toTitle) !== toWikiTitleKey(expectedTo)) {
+    if (
+      toTitleKeyForWiki(fromTitle, wikiId) !== toTitleKeyForWiki(expectedFrom, wikiId) ||
+      toTitleKeyForWiki(toTitle, wikiId) !== toTitleKeyForWiki(expectedTo, wikiId)
+    ) {
       throw new ApiError(400, "ROUTE_STEP_MISMATCH", "Submitted steps do not match submitted route");
     }
 

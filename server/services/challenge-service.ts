@@ -7,6 +7,7 @@ import { fetchRandomArticleTitlesForWiki } from "@/server/services/wiki/wiki-pro
 import {
   createChallenge,
   getChallengeById,
+  getChallengeBySeed,
   getDailyChallengeByDateKey,
   getRandomActiveChallenge,
   setDailyChallenge,
@@ -415,6 +416,73 @@ function withVarietyChallenges(dailySet: DailyChallengeSet): DailyChallengeSet {
 
 export async function createChallengeRecord(input: CreateChallengeRequest) {
   return createChallenge(input);
+}
+
+export interface ResolveChallengeForRunInput {
+  challengeId: string;
+  wikiModeId: WikiModeId;
+  snapshot?: {
+    label: string;
+    startTitle: string;
+    targetTitle: string;
+    difficultyScore: number;
+    shortestPathHint?: number;
+  };
+}
+
+/**
+ * Resolves a challenge id to a persisted DB row. Daily, custom, and emergency
+ * challenge ids are materialized on first run so ELO and run history can be saved.
+ */
+export async function resolveChallengeForRun(input: ResolveChallengeForRunInput): Promise<ChallengeDescriptor> {
+  if (!isDatabaseConfigured()) {
+    throw new ApiError(503, "DATABASE_UNAVAILABLE", "Database is not configured");
+  }
+
+  try {
+    return await getChallengeById(input.challengeId);
+  } catch (error) {
+    if (!(error instanceof ApiError && error.code === "CHALLENGE_NOT_FOUND")) {
+      throw error;
+    }
+  }
+
+  const bySeed = await getChallengeBySeed(input.challengeId);
+  if (bySeed) {
+    return bySeed;
+  }
+
+  const fallback = getFallbackChallengeById(input.challengeId);
+  const descriptor =
+    fallback ??
+    (input.snapshot
+      ? ({
+          id: input.challengeId,
+          label: input.snapshot.label,
+          startTitle: input.snapshot.startTitle,
+          targetTitle: input.snapshot.targetTitle,
+          difficultyScore: input.snapshot.difficultyScore,
+          difficultyTier: inferTier(input.snapshot.difficultyScore),
+          shortestPathHint:
+            input.snapshot.shortestPathHint ?? Math.max(2, Math.round(input.snapshot.difficultyScore / 20)),
+          source: "generated" as const,
+        } satisfies ChallengeDescriptor)
+      : null);
+
+  if (!descriptor) {
+    throw new ApiError(404, "CHALLENGE_NOT_FOUND", "Challenge not found");
+  }
+
+  return createChallenge({
+    label: descriptor.label,
+    startTitle: descriptor.startTitle,
+    targetTitle: descriptor.targetTitle,
+    difficultyScore: descriptor.difficultyScore,
+    shortestPathHint: descriptor.shortestPathHint,
+    seed: input.challengeId,
+    isActive: true,
+    wikiId: input.wikiModeId,
+  });
 }
 
 export async function fetchChallengeById(challengeId: string) {

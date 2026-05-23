@@ -80,14 +80,16 @@ export async function createChallenge(input: CreateChallengeRequest): Promise<Ch
   return toChallengeDescriptor(challenge);
 }
 
+const challengeInclude = {
+  startArticle: { select: { title: true } },
+  targetArticle: { select: { title: true } },
+  dailyChallenges: { select: { id: true } },
+} as const;
+
 export async function getChallengeById(challengeId: string): Promise<ChallengeDescriptor> {
   const challenge = await prisma.challenge.findUnique({
     where: { id: challengeId },
-    include: {
-      startArticle: { select: { title: true } },
-      targetArticle: { select: { title: true } },
-      dailyChallenges: { select: { id: true } },
-    },
+    include: challengeInclude,
   });
 
   if (!challenge) {
@@ -95,6 +97,16 @@ export async function getChallengeById(challengeId: string): Promise<ChallengeDe
   }
 
   return toChallengeDescriptor(challenge);
+}
+
+export async function getChallengeBySeed(seed: string): Promise<ChallengeDescriptor | null> {
+  const challenge = await prisma.challenge.findFirst({
+    where: { seed },
+    include: challengeInclude,
+    orderBy: { createdAt: "desc" },
+  });
+
+  return challenge ? toChallengeDescriptor(challenge) : null;
 }
 
 export async function getRandomActiveChallenge(): Promise<ChallengeDescriptor | null> {

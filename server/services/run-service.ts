@@ -1,7 +1,8 @@
+import { isDatabaseConfigured, isPrismaConfigError } from "@/lib/database";
 import { ApiError } from "@/server/errors/api-error";
 import { getWikiModeConfig, getWikiModeId } from "@/lib/wiki-modes";
 import { calculateSoloEloDelta } from "@/lib/elo";
-import { getChallengeById } from "@/server/repositories/challenge-repository";
+import { resolveChallengeForRun } from "@/server/services/challenge-service";
 import { getRecentRuns, getRunById, getRunsForChallenge, getRunsForUser, saveRun } from "@/server/repositories/run-repository";
 import { ensureUser } from "@/server/repositories/user-repository";
 import type {
@@ -117,13 +118,32 @@ function validateRunShape(payload: SaveRunRequest, canonicalSteps: RunStepDetail
   }
 }
 
+async function resolvePersistedChallenge(payload: SaveRunRequest) {
+  const wikiModeId = getWikiModeId(payload.wikiMode);
+  const snapshot = payload.challengeSnapshot
+    ? {
+        label: payload.challengeSnapshot.label,
+        startTitle: payload.challengeSnapshot.startTitle,
+        targetTitle: payload.challengeSnapshot.targetTitle,
+        difficultyScore: payload.challengeSnapshot.difficultyScore,
+        shortestPathHint: payload.challengeSnapshot.shortestPathHint,
+      }
+    : undefined;
+
+  return resolveChallengeForRun({
+    challengeId: payload.challengeId,
+    wikiModeId,
+    snapshot,
+  });
+}
+
 export async function saveCompletedRun(payload: SaveRunRequest): Promise<SaveRunResponse> {
   const canonicalSteps = asCanonicalSteps(payload);
   validateRunShape(payload, canonicalSteps);
   const wikiModeId = getWikiModeId(payload.wikiMode);
   const wikiScope = getWikiModeConfig(wikiModeId).eloScope;
 
-  const challenge = await getChallengeById(payload.challengeId);
+  const challenge = await resolvePersistedChallenge(payload);
   await validateCompletedRoute({
     challengeStartTitle: challenge.startTitle,
     challengeTargetTitle: challenge.targetTitle,
@@ -143,7 +163,7 @@ export async function saveCompletedRun(payload: SaveRunRequest): Promise<SaveRun
 
   const run = await saveRun({
     userId: user.id,
-    challengeId: payload.challengeId,
+    challengeId: challenge.id,
     wikiMode: wikiModeId,
     status: "COMPLETED",
     durationMs: payload.finalElapsedMs,
@@ -173,6 +193,7 @@ export async function saveAbandonedRun(payload: SaveRunRequest): Promise<SaveRun
   validateAbandonedRunShape(payload, canonicalSteps);
   const wikiModeId = getWikiModeId(payload.wikiMode);
   const wikiScope = getWikiModeConfig(wikiModeId).eloScope;
+  const challenge = await resolvePersistedChallenge(payload);
 
   const user = await ensureUser(payload.userId ?? undefined);
   const finishedAt = payload.completedAt ? new Date(payload.completedAt) : new Date();
@@ -180,7 +201,7 @@ export async function saveAbandonedRun(payload: SaveRunRequest): Promise<SaveRun
 
   const run = await saveRun({
     userId: user.id,
-    challengeId: payload.challengeId,
+    challengeId: challenge.id,
     wikiMode: wikiModeId,
     status: "ABANDONED",
     durationMs: payload.finalElapsedMs,
@@ -211,13 +232,21 @@ function fromLegacyPayload(payload: RunSubmissionRequest): SaveRunRequest {
     payload.steps.length > 0 && payload.steps.every((step): step is SaveRunStepInput => "articleTitle" in step);
   const request: SaveRunRequest = {
     challengeId: payload.challengeId,
-    wikiMode: payload.wikiMode ?? payload.challengeSnapshot?.wikiId,
+    wikiMode: payload.wikiMode ?? payload.wikiId ?? payload.challengeSnapshot?.wikiId,
     userId: payload.userId,
     completed,
     finalElapsedMs: payload.durationMs,
     clickCount: payload.clickCount,
     route: payload.route,
     difficultyScore: payload.challengeSnapshot?.difficultyScore,
+    challengeSnapshot: payload.challengeSnapshot
+      ? {
+          label: payload.challengeSnapshot.label,
+          startTitle: payload.challengeSnapshot.startTitle,
+          targetTitle: payload.challengeSnapshot.targetTitle,
+          difficultyScore: payload.challengeSnapshot.difficultyScore,
+        }
+      : undefined,
     steps: hasCanonicalSteps
       ? payload.steps
       : payload.route.map((articleTitle, index) => {
@@ -303,7 +332,7 @@ function makeInMemoryRun(payload: RunSubmissionRequest): RunDetail {
 export async function submitRun(payload: RunSubmissionRequest): Promise<RunDetail> {
   const challengeStartTitle = payload.challengeSnapshot?.startTitle;
   const challengeTargetTitle = payload.challengeSnapshot?.targetTitle;
-  const wikiModeId = getWikiModeId(payload.wikiMode);
+  const wikiModeId = getWikiModeId(payload.wikiMode ?? payload.wikiId ?? payload.challengeSnapshot?.wikiId);
   const completed = payload.completed !== false;
   const saveRequest = fromLegacyPayload(payload);
 
@@ -344,7 +373,15 @@ export async function submitRun(payload: RunSubmissionRequest): Promise<RunDetai
       );
     }
 
-    return makeInMemoryRun(payload);
+    if (!isDatabaseConfigured() || isPrismaConfigError(error)) {
+      return makeInMemoryRun(payload);
+    }
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw error;
   }
 }
 
