@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
 import { BrandLogo } from "@/components/layout/brand-logo";
 import { AuthNav } from "@/components/layout/auth-nav";
 import { cn } from "@/utils/cn";
@@ -11,6 +12,52 @@ const links = [
   { href: "/daily", label: "Daily" },
   { href: "/leaderboard", label: "Leaderboard" },
 ];
+
+function NavLink({ href, label }: { href: string; label: string }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const isActive = pathname.startsWith(href);
+
+  return (
+    <Link
+      href={href}
+      aria-current={isActive ? "page" : undefined}
+      onClick={(event) => {
+        if (
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey ||
+          event.button !== 0 ||
+          isActive
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        startTransition(() => {
+          router.push(href);
+        });
+      }}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-3 py-1.5 transition-colors hover:text-[var(--foreground)]",
+        isActive
+          ? "border border-[var(--border)] bg-[var(--surface-elevated)] text-[var(--accent)]"
+          : "text-[var(--muted)] hover:bg-[var(--surface-elevated)]",
+        isPending && "opacity-80",
+      )}
+    >
+      {isPending ? (
+        <span
+          className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+          aria-hidden
+        />
+      ) : null}
+      {label}
+    </Link>
+  );
+}
 
 export function TopNav() {
   const pathname = usePathname();
@@ -33,18 +80,7 @@ export function TopNav() {
         </Link>
         <nav className="flex items-center gap-2 text-sm text-[var(--muted)]">
           {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={cn(
-                "rounded-[var(--radius-sm)] px-3 py-1.5 transition-colors hover:text-[var(--foreground)]",
-                pathname.startsWith(link.href)
-                  ? "border border-[var(--border)] bg-[var(--surface-elevated)] text-[var(--accent)]"
-                  : "text-[var(--muted)] hover:bg-[var(--surface-elevated)]"
-              )}
-            >
-              {link.label}
-            </Link>
+            <NavLink key={link.href} href={link.href} label={link.label} />
           ))}
           <AuthNav profileActive={pathname.startsWith("/profile")} />
         </nav>

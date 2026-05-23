@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -8,8 +9,19 @@ import { useSession } from "next-auth/react";
 import { buildRaceModeSummaries, getWikiModeId, type WikiModeId, profileToRaceModeStats } from "@/lib/wiki-modes";
 import type { ProfileSnapshot } from "@/types/domain";
 
+import { RaceLoadingSpinner } from "./RaceLoadingSpinner";
 import { RaceModeSelection } from "./RaceModeSelection";
-import { WikipediaRaceRunner } from "./WikipediaRaceRunner";
+
+const WikipediaRaceRunner = dynamic(
+  () => import("./WikipediaRaceRunner").then((module) => module.WikipediaRaceRunner),
+  {
+    loading: () => (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <RaceLoadingSpinner label="Loading race" />
+      </div>
+    ),
+  },
+);
 
 type RaceTabView = "modeSelection" | "activeRace";
 

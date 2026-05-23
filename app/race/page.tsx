@@ -1,15 +1,13 @@
+import { Suspense } from "react";
 import { RacePage } from "@/features/race/components/RacePage";
-import { getSession } from "@/lib/session";
-import { fetchProfileSnapshotByUsername } from "@/server/services/profile-service";
+import { RacePageSkeleton } from "@/features/race/components/RacePageSkeleton";
 
-export default async function RaceRoutePage() {
-  const session = await getSession();
-  const username = session?.user?.username;
-  const initialProfile = username ? await fetchProfileSnapshotByUsername(username) : null;
-
+export default function RaceRoutePage() {
   return (
     <main className="w-full">
-      <RacePage initialProfile={initialProfile} />
+      <Suspense fallback={<RacePageSkeleton />}>
+        <RacePage />
+      </Suspense>
     </main>
   );
 }
