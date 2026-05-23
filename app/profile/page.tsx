@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import { GoogleIcon } from "@/components/icons/google-icon";
 import { ProfileDetails } from "@/components/profile/profile-details";
 import { Button } from "@/components/ui/button";
 import { LoadingPanel } from "@/components/presentation/state-panel";
@@ -66,9 +67,10 @@ function ProfilePageContent() {
           <Button
             type="button"
             variant="outline"
-            className="mt-4"
+            className="mt-4 gap-2 shadow-[var(--shadow-soft)] transition-[color,background-color,border-color,box-shadow] duration-200 ease-out hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)] hover:shadow-[var(--shadow-lifted)] active:shadow-[var(--shadow-soft)]"
             onClick={() => signIn("google", { callbackUrl: "/profile" })}
           >
+            <GoogleIcon />
             Sign in with Google
           </Button>
         </section>

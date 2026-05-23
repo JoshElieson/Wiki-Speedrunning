@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
+import { GoogleIcon } from "@/components/icons/google-icon";
 import { cn } from "@/utils/cn";
 
 export function AuthNav({ profileActive }: { profileActive: boolean }) {
@@ -24,11 +25,14 @@ export function AuthNav({ profileActive }: { profileActive: boolean }) {
         type="button"
         onClick={() => signIn("google", { callbackUrl: "/profile" })}
         className={cn(
-          "rounded-[var(--radius-sm)] border border-[var(--border-strong)] px-3 py-1.5 text-[var(--foreground)] transition-colors hover:border-[var(--accent)]",
-          profileActive ? "bg-[var(--surface-elevated)] text-[var(--accent)]" : "",
+          "inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--foreground)] shadow-[var(--shadow-soft)] transition-[color,background-color,border-color,box-shadow] duration-200 ease-out hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)] hover:shadow-[var(--shadow-lifted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] active:shadow-[var(--shadow-soft)]",
+          profileActive
+            ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-strong)] hover:bg-[var(--accent-soft)]"
+            : "",
         )}
       >
-        Sign in
+        <GoogleIcon />
+        Sign in with Google
       </button>
     );
   }
