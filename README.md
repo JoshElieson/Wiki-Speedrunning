@@ -1,167 +1,54 @@
-# Wikipedia Speedrunning Ranked
+# WikiSpeedrunning
 
-Wikipedia Speedrunning Ranked is a competitive Wikipedia speedrunning platform where players race from one article to another using only internal Wikipedia links.
+A ranked Wikipedia speedrunning platform where players race from a starting article to a target article using only internal Wikipedia links.
 
-## Product Overview
+The app turns Wikipedia into a graph traversal game: each article is a node, each link is an edge, and each completed run is scored by time, clicks, and route efficiency.
 
-Each run follows a simple but strategically deep loop:
+## Live Site
 
-1. Start on one Wikipedia article.
-2. Reach a target article using only internal links.
-3. Race the clock and minimize unnecessary clicks.
-4. Compare route quality, click count, and completion time against other players.
+[wikispeedrunning.com](https://wikispeedrunning.com)
 
-## Why This Is Technically Interesting
+## Why I Built It
 
-Wikipedia Speedrunning Ranked is modeled as a graph problem:
+I wanted to create a project that combines a fun user-facing game with real full-stack engineering challenges: route tracking, leaderboard design, run validation, caching, user profiles, and scalable game-mode architecture.
 
-- Wikipedia articles are graph nodes.
-- Internal links are graph edges.
-- A player run is a graph traversal sequence.
-- Replay and ghost race systems build on deterministic traversal timelines.
-- Daily challenge and leaderboard systems generate repeatable, rankable graph tasks.
-- Caching article payloads and adjacency lists is critical to keep gameplay responsive.
+## Features
 
-The current architecture is designed to support solo play now and realtime multiplayer later.
-
-## Project Status
-
-### Completed
-
-- Solo race gameplay loop with challenge loading, article traversal, timer, click tracking, and run completion.
-- Internal-link validation and route checks before run persistence.
-- Run submission pipeline with Prisma-backed storage (`Run`, `RunStep`, and linked article records).
-- Daily challenge generation and retrieval (`time` and `clicks` modes).
-- Leaderboard API and leaderboard UI page with cached reads.
-- Redis/Upstash/in-memory cache fallback for article, links, and challenge payloads.
-
-### In Progress
-
-- Replay UX: route timeline UI scaffolding exists, but full graph replay visualization is not complete.
-- Profile and run-detail experiences: pages exist, with part of the data currently mocked while backend surfaces mature.
-- Multiplayer foundations: schema and package groundwork are present, but active socket room flow is not yet implemented.
-
-### Planned
-
-- Ghost races.
-- Realtime multiplayer races.
-- Advanced replay visualization.
-- Ranked ladder seasons and matchmaking systems.
-- Route analytics and optimization insights.
-- Expanded challenge generation with richer difficulty modeling.
-
-## Core Features
-
-- Solo Wikipedia speedruns with strict internal-link navigation.
-- Dynamic challenge generation (`start -> target`) with difficulty metadata.
-- Daily challenge set generation for consistent competition.
-- Run validation and persistence with step-by-step traversal history.
-- Leaderboard views for ranking and comparison.
-- Route trail capture designed for replay/ghost extensions.
-
-## Architecture Overview
-
-Wikipedia Speedrunning Ranked uses a layered Next.js architecture:
-
-- `app/`: UI routes and API route handlers.
-- `features/`: race flow, wiki integration, and challenge-domain logic.
-- `server/services/`: orchestration for run submission, leaderboard reads, challenge behavior.
-- `server/repositories/`: Prisma data access boundaries.
-- `lib/`: infrastructure clients (`prisma`, cache adapters, query client).
-- `prisma/`: PostgreSQL schema for users, runs, challenges, leaderboard, replay metadata, and multiplayer-ready room entities.
-
-For a deeper technical breakdown, see `docs/ARCHITECTURE.md`.
+- Ranked Wikipedia speedruns with time and click tracking
+- User profiles with ELO-style ranking
+- Global leaderboards
+- Daily challenges
+- Run history and completion stats
+- Wikipedia page fetching and link parsing
+- Cached page data for faster gameplay
+- Architecture designed to support additional wiki modes such as Minecraft, Pokémon, Star Wars, Marvel, and League of Legends
 
 ## Tech Stack
 
-- Next.js (App Router)
-- React
-- TypeScript
-- Tailwind CSS
-- Prisma ORM
-- PostgreSQL
-- Redis (or Upstash Redis)
-- Zustand (client race state)
-- TanStack Query (server-state fetching/caching)
-- Framer Motion (motion and transitions)
-- Socket/WebSocket-ready foundation (schema and dependencies prepared)
+- **Frontend:** React, TypeScript, Tailwind CSS, Zustand
+- **Backend:** Node.js, Express
+- **Database:** PostgreSQL, Prisma
+- **Caching:** Redis / Upstash
+- **Data Source:** Wikipedia API
+- **Deployment:** Vercel / cloud-hosted backend
 
-## Setup
+## Engineering Highlights
 
-### 1) Install dependencies
+- Modeled Wikipedia navigation as a graph traversal problem
+- Built a ranked gameplay loop with persistent user stats and leaderboards
+- Designed a scalable schema for supporting multiple wiki game modes
+- Implemented cached page retrieval to reduce repeated API calls
+- Structured the app around reusable game logic, route tracking, and run validation
 
-```bash
-npm install
-```
+## What I Learned
 
-### 2) Configure environment variables
+This project strengthened my ability to build full-stack applications that combine product design, database modeling, external APIs, caching, and real-time-feeling user interaction. It also pushed me to think about how to turn a simple idea into a polished, replayable web app.
 
-Copy `.env.example` to `.env` and set values:
+## Future Improvements
 
-- `DATABASE_URL` (PostgreSQL connection string)
-- `REDIS_URL` (optional local Redis connection)
-- `UPSTASH_REDIS_REST_URL` (optional Upstash endpoint)
-- `UPSTASH_REDIS_REST_TOKEN` (optional Upstash token)
-- `NEXT_PUBLIC_APP_URL` (default: `http://localhost:3000`)
-
-If Redis is not configured, Wikipedia Speedrunning Ranked falls back to in-memory cache for local development.
-
-**Solo races without a database:** If `DATABASE_URL` is missing or PostgreSQL is unreachable, solo races still start using built-in fallback challenges. Run submission is stored in memory for that session. For leaderboards, profiles, and persisted challenge pools, set up PostgreSQL as below.
-
-**Local PostgreSQL (recommended):**
-
-```bash
-npm run db:up
-copy .env.example .env
-```
-
-On macOS/Linux, use `cp .env.example .env` instead of `copy`.
-
-### 3) Prisma setup
-
-```bash
-npm run prisma:generate
-npm run prisma:migrate
-npm run prisma:seed
-```
-
-### 4) Run the development server
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-## Scripts
-
-- `npm run dev`: start local development server
-- `npm run build`: production build
-- `npm run start`: run production server
-- `npm run lint`: run ESLint
-- `npm run format`: check Prettier formatting
-- `npm run format:write`: fix Prettier formatting
-- `npm run prisma:generate`: generate Prisma client
-- `npm run prisma:migrate`: run development migrations
-- `npm run prisma:studio`: open Prisma Studio
-
-## Planned Features Roadmap
-
-- Ghost races and personal-best overlays.
-- Daily challenge progression and streak systems.
-- Realtime multiplayer races and spectators.
-- Rich replay visualization with graph path playback.
-- Ranked ladder progression and challenge tiers.
-- Route analytics (detours, path efficiency, split timing).
-
-## Repo Structure
-
-```txt
-app/          # Pages and API routes
-components/   # Shared UI and presentation components
-features/     # Domain-focused frontend logic (race/wiki/challenges)
-server/       # Services, repositories, validation, and cache wiring
-lib/          # Infra clients and adapters
-prisma/       # Database schema and migrations
-docs/         # Architecture and technical docs
-```
+- Multiplayer races
+- Public replay sharing
+- Route visualization
+- More wiki modes
+- Improved anti-cheat and run validation
+- Seasonal rankings and achievements
