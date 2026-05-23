@@ -303,6 +303,7 @@ function makeInMemoryRun(payload: RunSubmissionRequest): RunDetail {
     id: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     challengeId: payload.challengeId,
     challengeLabel: payload.challengeSnapshot?.label ?? "Local Solo Challenge",
+    wikiMode: getWikiModeId(payload.wikiMode ?? payload.wikiId ?? payload.challengeSnapshot?.wikiId),
     userId: payload.userId ?? "local-user",
     username: payload.userId ?? "local_runner",
     status: completed ? "COMPLETED" : "ABANDONED",

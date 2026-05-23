@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/utils/cn";
 import { getRaceTierLabel } from "@/lib/race-tier";
 import { RaceModeCard } from "./RaceModeCard";
@@ -11,6 +12,7 @@ import type { RaceModeSummary } from "./race-mode-types";
 interface RaceModeSelectionProps {
   modes: RaceModeSummary[];
   onSelectMode: (modeId: string) => void;
+  statsLoading?: boolean;
 }
 
 const MODE_BUTTON_LABELS: Record<string, string> = {
@@ -23,7 +25,7 @@ const MODE_BUTTON_LABELS: Record<string, string> = {
   marvel: "Marvel",
 };
 
-export function RaceModeSelection({ modes, onSelectMode }: RaceModeSelectionProps) {
+export function RaceModeSelection({ modes, onSelectMode, statsLoading = false }: RaceModeSelectionProps) {
   const [selectedModeId, setSelectedModeId] = useState(modes[0]?.id ?? "wikipedia");
   const selectedMode = modes.find((mode) => mode.id === selectedModeId) ?? modes[0];
   const selectedRating = selectedMode?.rating ?? 1000;
@@ -42,11 +44,20 @@ export function RaceModeSelection({ modes, onSelectMode }: RaceModeSelectionProp
       <div className="mb-6 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-3">
         <p className="text-xs uppercase tracking-wide text-[var(--muted)]">{selectedModeLabel} Rating</p>
         <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
-          <p className="text-2xl font-semibold text-[var(--foreground)]">{selectedRating} ELO</p>
-          <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--accent)]">
-            {rankStatus}
-            <RaceTierInfo />
-          </div>
+          {statsLoading ? (
+            <>
+              <Skeleton className="h-8 w-28" aria-label="Loading rating" />
+              <Skeleton className="h-5 w-24" aria-hidden />
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-semibold text-[var(--foreground)]">{selectedRating} ELO</p>
+              <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--accent)]">
+                {rankStatus}
+                <RaceTierInfo />
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -68,7 +79,9 @@ export function RaceModeSelection({ modes, onSelectMode }: RaceModeSelectionProp
         })}
       </div>
 
-      {selectedMode ? <RaceModeCard mode={selectedMode} onStart={() => onSelectMode(selectedMode.id)} /> : null}
+      {selectedMode ? (
+        <RaceModeCard mode={selectedMode} statsLoading={statsLoading} onStart={() => onSelectMode(selectedMode.id)} />
+      ) : null}
     </section>
   );
 }

@@ -85,6 +85,7 @@ export interface RunHistoryItem {
   id: string;
   challengeId: string;
   challengeLabel: string;
+  wikiMode: import("@/lib/wiki-modes").WikiModeId;
   userId: string;
   username: string;
   status: RunStatusValue;

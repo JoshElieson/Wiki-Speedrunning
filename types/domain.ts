@@ -112,6 +112,7 @@ export interface ProfileSnapshot {
   recentRuns: {
     id: string;
     challengeLabel: string;
+    wikiMode: WikiModeId;
     status: "COMPLETED" | "ABANDONED" | "DISQUALIFIED";
     durationMs: number;
     clickCount: number;

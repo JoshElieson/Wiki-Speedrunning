@@ -6,6 +6,7 @@ import { Lock } from "lucide-react";
 import { VarietyCategoryLogo } from "@/components/profile/variety-category-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getRaceModeTheme } from "@/lib/race-mode-config";
 import { getRaceTierLabel, getRaceTierProgress } from "@/lib/race-tier";
 import { cn } from "@/utils/cn";
@@ -15,6 +16,7 @@ import type { RaceModeSummary } from "./race-mode-types";
 interface RaceModeCardProps {
   mode: RaceModeSummary;
   onStart: () => void;
+  statsLoading?: boolean;
 }
 
 function tagBadgeVariant(tag: string): "default" | "neutral" | "purple" {
@@ -44,16 +46,30 @@ function RaceModeIcon({ logo, badgeClassName, large }: { logo: string; badgeClas
   );
 }
 
-function StatCell({ label, value, className }: { label: string; value: string; className?: string }) {
+function StatCell({
+  label,
+  value,
+  className,
+  loading = false,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  loading?: boolean;
+}) {
   return (
     <div className={cn("flex flex-col justify-center px-4 py-3", className)}>
       <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums leading-none tracking-tight text-[var(--foreground)]">{value}</p>
+      {loading ? (
+        <Skeleton className="mt-1 h-5 w-20" aria-label={`Loading ${label.toLowerCase()}`} />
+      ) : (
+        <p className="mt-1 text-lg font-semibold tabular-nums leading-none tracking-tight text-[var(--foreground)]">{value}</p>
+      )}
     </div>
   );
 }
 
-export function RaceModeCard({ mode, onStart }: RaceModeCardProps) {
+export function RaceModeCard({ mode, onStart, statsLoading = false }: RaceModeCardProps) {
   const router = useRouter();
   const theme = getRaceModeTheme(mode.id);
   const tierLabel = getRaceTierLabel(mode.rating);
@@ -104,25 +120,37 @@ export function RaceModeCard({ mode, onStart }: RaceModeCardProps) {
           <p className="mt-3 max-w-xl text-sm leading-snug text-[var(--muted)]">{mode.description}</p>
 
           <div className="mt-4 space-y-2">
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="text-sm font-semibold text-[var(--foreground)]">{tierLabel}</p>
-              {mode.enabled && tierProgress.nextTierLabel ? (
-                <p className="text-xs text-[var(--muted)]">
-                  {tierProgress.pointsToNext} ELO to {tierProgress.nextTierLabel.replace(" Tier", "")}
-                </p>
-              ) : null}
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-soft)]">
-              <div
-                className={cn("h-full rounded-full transition-[width]", theme.accent.progressBar)}
-                style={{ width: `${tierProgress.progressPercent}%` }}
-                role="progressbar"
-                aria-valuenow={tierProgress.progressPercent}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label={`Progress toward ${tierProgress.nextTierLabel ?? "max tier"}`}
-              />
-            </div>
+            {statsLoading ? (
+              <>
+                <div className="flex items-baseline justify-between gap-3">
+                  <Skeleton className="h-4 w-24" aria-label="Loading tier" />
+                  <Skeleton className="h-3 w-32" aria-hidden />
+                </div>
+                <Skeleton className="h-1.5 w-full rounded-full" aria-hidden />
+              </>
+            ) : (
+              <>
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-sm font-semibold text-[var(--foreground)]">{tierLabel}</p>
+                  {mode.enabled && tierProgress.nextTierLabel ? (
+                    <p className="text-xs text-[var(--muted)]">
+                      {tierProgress.pointsToNext} ELO to {tierProgress.nextTierLabel.replace(" Tier", "")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-soft)]">
+                  <div
+                    className={cn("h-full rounded-full transition-[width]", theme.accent.progressBar)}
+                    style={{ width: `${tierProgress.progressPercent}%` }}
+                    role="progressbar"
+                    aria-valuenow={tierProgress.progressPercent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Progress toward ${tierProgress.nextTierLabel ?? "max tier"}`}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="mt-auto border-t border-[var(--border)]/80 pt-4">
@@ -156,22 +184,35 @@ export function RaceModeCard({ mode, onStart }: RaceModeCardProps) {
                 </>
               )}
             </Button>
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              {mode.enabled
-                ? `${mode.runs} completed run${mode.runs === 1 ? "" : "s"} on record`
-                : "This wiki mode is in development and will unlock later."}
-            </p>
+            {statsLoading ? (
+              <Skeleton className="mt-2 h-3 w-40" aria-label="Loading run count" />
+            ) : (
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                {mode.enabled
+                  ? `${mode.runs} completed run${mode.runs === 1 ? "" : "s"} on record`
+                  : "This wiki mode is in development and will unlock later."}
+              </p>
+            )}
           </div>
         </div>
 
         <div className={cn("flex flex-col border-t border-[var(--border)] lg:border-t-0", theme.accent.statPanel)}>
-          <StatCell label="Rating" value={`${mode.rating} ELO`} className="border-b border-[var(--border)]/70" />
+          <StatCell
+            label="Rating"
+            value={`${mode.rating} ELO`}
+            className="border-b border-[var(--border)]/70"
+            loading={statsLoading}
+          />
           <div className="flex items-end justify-between gap-3 border-b border-[var(--border)]/70 px-4 py-3">
             <div className="min-w-0">
               <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Runs</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums leading-none tracking-tight text-[var(--foreground)]">
-                {mode.runs}
-              </p>
+              {statsLoading ? (
+                <Skeleton className="mt-1 h-5 w-10" aria-label="Loading runs" />
+              ) : (
+                <p className="mt-1 text-lg font-semibold tabular-nums leading-none tracking-tight text-[var(--foreground)]">
+                  {mode.runs}
+                </p>
+              )}
             </div>
             {mode.enabled ? (
               <Button
@@ -189,6 +230,7 @@ export function RaceModeCard({ mode, onStart }: RaceModeCardProps) {
             label="Best time"
             value={mode.bestTime ? formatDuration(mode.bestTime) : "—"}
             className="flex-1"
+            loading={statsLoading}
           />
         </div>
       </div>

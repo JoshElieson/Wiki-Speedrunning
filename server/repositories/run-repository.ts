@@ -1,8 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getWikiModeId } from "@/lib/wiki-modes";
 import { ApiError } from "@/server/errors/api-error";
 import type { MatchHistoryFilters, RoutePathData, RoutePathNode, RunDetail, RunHistoryItem, RunStepDetail } from "@/server/types/run-history";
-import { getWikiModeId } from "@/lib/wiki-modes";
 import { normalizeTitleForWiki } from "@/server/services/wiki/title-normalization";
 import { ensureArticleRecord } from "./wiki-repository";
 
@@ -141,6 +141,7 @@ function toRunHistoryItem(run: NonNullable<RunWithRelations>): RunHistoryItem {
     id: run.id,
     challengeId: run.challengeId,
     challengeLabel: run.challenge.label,
+    wikiMode: getWikiModeId(run.wikiMode),
     userId: run.user.id,
     username: run.user.username,
     status: run.status,

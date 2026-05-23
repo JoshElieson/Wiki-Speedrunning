@@ -34,9 +34,9 @@ function hasRaceUrlParams(searchParams: URLSearchParams): boolean {
   return Boolean(safeSearchParam(searchParams.get("start")) && safeSearchParam(searchParams.get("target")));
 }
 
-export function RacePage() {
+export function RacePage({ initialProfile = null }: { initialProfile?: ProfileSnapshot | null }) {
   const searchParams = useSearchParams();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const username = session?.user?.username;
   const [view, setView] = useState<RaceTabView>("modeSelection");
   const [activeMode, setActiveMode] = useState<WikiModeId>("wikipedia");
@@ -48,6 +48,9 @@ export function RacePage() {
     }
   }, [searchParams]);
 
+  const resolvedInitialProfile =
+    initialProfile && (!username || initialProfile.username === username) ? initialProfile : undefined;
+
   const profileQuery = useQuery({
     queryKey: ["profile", username],
     queryFn: async () => {
@@ -58,10 +61,14 @@ export function RacePage() {
       return (await response.json()) as ProfileSnapshot;
     },
     enabled: Boolean(username),
+    initialData: resolvedInitialProfile,
     retry: 1,
   });
 
-  const profileStats = useMemo(() => profileToRaceModeStats(profileQuery.data), [profileQuery.data]);
+  const profile = profileQuery.data ?? resolvedInitialProfile;
+  const isSignedIn = Boolean(initialProfile) || (sessionStatus === "authenticated" && Boolean(session?.user));
+  const isLoadingStats = isSignedIn && !profile && (sessionStatus === "loading" || profileQuery.isLoading);
+  const profileStats = useMemo(() => profileToRaceModeStats(profile), [profile]);
   const raceModes = useMemo(() => buildRaceModeSummaries(profileStats), [profileStats]);
   if (view === "activeRace") {
     return <WikipediaRaceRunner modeId={activeMode} onReturnToSelection={() => setView("modeSelection")} />;
@@ -70,6 +77,7 @@ export function RacePage() {
   return (
     <RaceModeSelection
       modes={raceModes}
+      statsLoading={isLoadingStats}
       onSelectMode={(modeId) => {
         const selected = raceModes.find((mode) => mode.id === modeId);
         if (!selected?.enabled) {

@@ -109,6 +109,7 @@ export function buildProfileSnapshot(params: {
     recentRuns: params.recentRuns.map((run) => ({
       id: run.id,
       challengeLabel: run.challengeLabel,
+      wikiMode: run.wikiMode,
       status: run.status,
       durationMs: run.finalElapsedMs,
       clickCount: run.clickCount,

@@ -1,4 +1,5 @@
 import type { ProfileSnapshot } from "@/types/domain";
+import { getRunModeLabel } from "@/utils/run-mode-label";
 
 export type ProfileRunHistoryItem = ProfileSnapshot["recentRuns"][number];
 
@@ -54,7 +55,7 @@ function matchesClicks(clickCount: number, filter: RunHistoryClickFilter): boole
 
 function runSearchText(run: ProfileRunHistoryItem): string {
   const routeText = run.route?.join(" ") ?? "";
-  return `${run.challengeLabel} ${routeText} ${run.status}`.toLowerCase();
+  return `${run.challengeLabel} ${getRunModeLabel(run.wikiMode)} ${routeText} ${run.status}`.toLowerCase();
 }
 
 function compareRuns(a: ProfileRunHistoryItem, b: ProfileRunHistoryItem, sort: RunHistorySort): number {

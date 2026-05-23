@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ProfileSnapshot } from "@/types/domain";
 import { formatDuration } from "@/utils/format";
+import { getRunModeBadgeClassName, getRunModeLabel } from "@/utils/run-mode-label";
 import {
   defaultRunHistoryFilters,
   filterRunHistory,
@@ -205,6 +206,9 @@ export function RunHistoryPanel({ runs }: { runs: ProfileSnapshot["recentRuns"] 
                   description={`${formatDuration(run.durationMs)} · ${run.clickCount} clicks · score ${run.score}`}
                   meta={
                     <span className="flex flex-wrap items-center gap-2">
+                      <Badge variant="neutral" className={getRunModeBadgeClassName(run.wikiMode)}>
+                        {getRunModeLabel(run.wikiMode)}
+                      </Badge>
                       <Badge variant={runStatusVariant(run.status)}>{runStatusLabel(run.status)}</Badge>
                       <span>{new Date(run.createdAt).toLocaleString()}</span>
                     </span>
