@@ -35,10 +35,8 @@ export default async function RootLayout({
     >
       <body className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
         <AppProviders session={session}>
-          <div className="flex h-dvh flex-col overflow-hidden">
-            <TopNav />
-            <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-          </div>
+          <TopNav />
+          {children}
         </AppProviders>
       </body>
     </html>
