@@ -1542,6 +1542,11 @@ export function WikipediaArticleView({
               return;
             }
             anchor.classList.add("page-toc-link");
+            const href = anchor.getAttribute("href") || "";
+            const hashIndex = href.indexOf("#");
+            if (hashIndex >= 0) {
+              anchor.setAttribute("href", href.slice(hashIndex) || "#");
+            }
           });
         };
 
@@ -1868,6 +1873,114 @@ export function WikipediaArticleView({
           });
         };
 
+        const currentArticleTitle = ${JSON.stringify(title)};
+        const articlePathPrefixes = ${JSON.stringify(wikiConfig.articlePathPrefixes)};
+
+        const normalizeTitleKey = (value) =>
+          decodeURIComponent(String(value || ""))
+            .replace(/_/g, " ")
+            .trim()
+            .toLowerCase();
+
+        const currentArticleTitleKey = normalizeTitleKey(currentArticleTitle);
+
+        const isTocLink = (link) =>
+          Boolean(
+            link.closest(".page-toc, #toc, .toc, [data-page-toc]"),
+          );
+
+        const extractTitleKeyFromHref = (href) => {
+          const trimmed = href.trim();
+          if (!trimmed || trimmed.startsWith("#")) {
+            return null;
+          }
+
+          const hashIndex = trimmed.indexOf("#");
+          const pathPart = hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed;
+
+          for (const prefix of articlePathPrefixes) {
+            if (pathPart.startsWith(prefix)) {
+              const rawTitle = pathPart.slice(prefix.length).split("?")[0]?.trim();
+              return rawTitle ? normalizeTitleKey(rawTitle) : null;
+            }
+          }
+
+          if (!/^https?:\\/\\//i.test(pathPart)) {
+            return null;
+          }
+
+          try {
+            const parsed = new URL(pathPart);
+            for (const prefix of articlePathPrefixes) {
+              if (parsed.pathname.startsWith(prefix)) {
+                const rawTitle = parsed.pathname.slice(prefix.length).split("?")[0]?.trim();
+                return rawTitle ? normalizeTitleKey(rawTitle) : null;
+              }
+            }
+          } catch {
+            return null;
+          }
+
+          return null;
+        };
+
+        const scrollToFragment = (hash) => {
+          const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+          if (!raw) {
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            return;
+          }
+
+          let id = raw;
+          try {
+            id = decodeURIComponent(raw);
+          } catch {
+            id = raw;
+          }
+
+          const target =
+            document.getElementById(id) ||
+            document.querySelector('[name="' + CSS.escape(id) + '"]');
+          if (target instanceof HTMLElement) {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        };
+
+        const resolveFragmentLink = (href, link) => {
+          const trimmed = (href || "").trim();
+          if (!trimmed) {
+            return null;
+          }
+
+          if (trimmed.startsWith("#")) {
+            if (trimmed === "#" && !isTocLink(link)) {
+              return null;
+            }
+            return trimmed;
+          }
+
+          const hashIndex = trimmed.indexOf("#");
+          if (hashIndex < 0) {
+            return null;
+          }
+
+          const fragment = trimmed.slice(hashIndex);
+          if (fragment === "#") {
+            return null;
+          }
+
+          if (isTocLink(link)) {
+            return fragment;
+          }
+
+          const hrefTitleKey = extractTitleKeyFromHref(trimmed);
+          if (hrefTitleKey && hrefTitleKey === currentArticleTitleKey) {
+            return fragment;
+          }
+
+          return null;
+        };
+
         document.addEventListener("click", (event) => {
           const target = event.target;
           if (!(target instanceof Element)) {
@@ -1880,6 +1993,13 @@ export function WikipediaArticleView({
           }
 
           const href = link.getAttribute("href") || "";
+          const fragment = resolveFragmentLink(href, link);
+          if (fragment) {
+            event.preventDefault();
+            scrollToFragment(fragment);
+            return;
+          }
+
           if (href.startsWith("#")) {
             return;
           }

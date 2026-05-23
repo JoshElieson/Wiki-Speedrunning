@@ -13,14 +13,14 @@ import { prisma } from "@/lib/prisma";
 import type { ProfileCategoryElo, ProfileSnapshot } from "@/types/domain";
 import type { RunHistoryItem } from "@/server/types/run-history";
 
-function buildStatsByModeFromRuns(
-  aggregates: Array<{
-    wikiMode: string;
-    status: string;
-    _count: { _all: number };
-    _min: { durationMs: number | null; clickCount: number | null };
-  }>,
-): StatsByMode {
+export type ProfileRunAggregate = {
+  wikiMode: string;
+  status: string;
+  _count: { _all: number };
+  _min: { durationMs: number | null; clickCount: number | null };
+};
+
+function buildStatsByModeFromRuns(aggregates: ProfileRunAggregate[]): StatsByMode {
   const stats = createDefaultStatsByMode();
 
   for (const row of aggregates) {
@@ -67,12 +67,7 @@ export function buildProfileSnapshot(params: {
     bestTimeMs: number | null;
     bestScore: number | null;
   }>;
-  runAggregates: Array<{
-    wikiMode: string;
-    status: string;
-    _count: { _all: number };
-    _min: { durationMs: number | null; clickCount: number | null };
-  }>;
+  runAggregates: ProfileRunAggregate[];
   totalRuns: number;
   recentRuns: RunHistoryItem[];
 }): ProfileSnapshot {
@@ -148,7 +143,7 @@ export async function loadProfileStatsForUser(userId: string) {
 
   return {
     ratingEntries,
-    runAggregates,
+    runAggregates: runAggregates as ProfileRunAggregate[],
     totalRuns,
     eloByMode: buildEloByMode(ratingEntries) satisfies EloByMode,
   };
