@@ -47,6 +47,86 @@ export function WikipediaArticleView({
         color: #202122;
         font-family: sans-serif;
       }
+      .page-layout {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+      }
+      .page-toc {
+        position: sticky;
+        top: 8px;
+        width: 230px;
+        flex: 0 0 230px;
+        border: 1px solid #eaecf0;
+        background: #fff;
+        padding: 10px 10px 12px;
+        font-size: 0.95rem;
+      }
+      .page-toc-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .page-toc-title {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .page-toc-toggle {
+        border: 1px solid #eaecf0;
+        background: #f8f9fa;
+        padding: 2px 8px;
+        font-size: 0.875rem;
+        line-height: 1.3;
+        color: #202122;
+        cursor: pointer;
+      }
+      .page-toc-list,
+      .page-toc-sublist {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .page-toc-item {
+        margin: 4px 0;
+      }
+      .page-toc-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .page-toc-link {
+        color: #0645ad;
+        text-decoration: none;
+      }
+      .page-toc-link:hover {
+        text-decoration: underline;
+      }
+      .page-toc-arrow {
+        border: 0;
+        background: none;
+        color: #54595d;
+        font-size: 0.85rem;
+        line-height: 1;
+        cursor: pointer;
+        width: 1rem;
+        padding: 0;
+      }
+      .page-toc-sublist {
+        margin-left: 18px;
+      }
+      .page-toc-sublist[hidden] {
+        display: none;
+      }
+      .page-toc[aria-collapsed="true"] .page-toc-body {
+        display: none;
+      }
+      .page-main {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
       main {
         padding: 0 8px 12px;
       }
@@ -77,6 +157,14 @@ export function WikipediaArticleView({
         max-width: 100%;
       }
       @media (max-width: 640px) {
+        .page-layout {
+          display: block;
+        }
+        .page-toc {
+          position: static;
+          width: auto;
+          margin-bottom: 12px;
+        }
         main {
           padding: 0 6px 12px;
         }
@@ -85,14 +173,174 @@ export function WikipediaArticleView({
   </head>
   <body>
     <main>
-      <h1 class="page-title">${escapedTitle}</h1>
-      <p class="page-subtitle">From Wikipedia, the free encyclopedia</p>
-      <div class="mw-body-content">
-        ${html}
+      <div class="page-layout">
+        <aside class="page-toc" aria-collapsed="false" data-page-toc hidden>
+          <div class="page-toc-header">
+            <h2 class="page-toc-title">Contents</h2>
+            <button class="page-toc-toggle" type="button" data-toc-toggle>hide</button>
+          </div>
+          <nav class="page-toc-body">
+            <ul class="page-toc-list" data-toc-root></ul>
+          </nav>
+        </aside>
+        <div class="page-main">
+          <h1 class="page-title">${escapedTitle}</h1>
+          <p class="page-subtitle">From Wikipedia, the free encyclopedia</p>
+          <div class="mw-body-content">
+            ${html}
+          </div>
+        </div>
       </div>
     </main>
     <script>
       (() => {
+        const headingSelector = "h2, h3, h4";
+        const tocContainer = document.querySelector("[data-page-toc]");
+        const tocRoot = document.querySelector("[data-toc-root]");
+        const tocToggle = document.querySelector("[data-toc-toggle]");
+
+        const slugify = (text) =>
+          text
+            .toLowerCase()
+            .trim()
+            .replace(/\\[[^\\]]+\\]/g, "")
+            .replace(/[^a-z0-9\\s-]/g, "")
+            .replace(/\\s+/g, "-")
+            .replace(/-+/g, "-");
+
+        const ensureHeadingId = (heading, index) => {
+          if (heading.id) {
+            return heading.id;
+          }
+          const rawText = heading.textContent || "section";
+          let nextId = slugify(rawText) || "section-" + (index + 1);
+          let suffix = 2;
+          while (document.getElementById(nextId)) {
+            nextId = (slugify(rawText) || "section-" + (index + 1)) + "-" + suffix;
+            suffix += 1;
+          }
+          heading.id = nextId;
+          return nextId;
+        };
+
+        const buildToc = () => {
+          if (!(tocContainer instanceof HTMLElement) || !(tocRoot instanceof HTMLElement)) {
+            return;
+          }
+
+          const headings = Array.from(document.querySelectorAll(".mw-body-content " + headingSelector))
+            .filter((heading) => !heading.closest(".navbox, table.infobox, .reflist"));
+
+          if (headings.length === 0) {
+            tocContainer.hidden = true;
+            return;
+          }
+
+          tocContainer.hidden = false;
+          tocRoot.replaceChildren();
+
+          const topItem = document.createElement("li");
+          topItem.className = "page-toc-item";
+          const topLine = document.createElement("div");
+          topLine.className = "page-toc-line";
+          const topLink = document.createElement("a");
+          topLink.className = "page-toc-link";
+          topLink.href = "#";
+          topLink.textContent = "(Top)";
+          topLine.appendChild(topLink);
+          topItem.appendChild(topLine);
+          tocRoot.appendChild(topItem);
+
+          const stack = [{ level: 1, list: tocRoot, item: null }];
+
+          headings.forEach((heading, index) => {
+            const tagLevel = Number(heading.tagName.slice(1));
+            const level = Number.isFinite(tagLevel) ? tagLevel : 2;
+            const id = ensureHeadingId(heading, index);
+            const text = (heading.textContent || "").replace(/\\[[^\\]]+\\]/g, "").trim();
+            if (!text) {
+              return;
+            }
+
+            while (stack.length > 1 && level <= stack[stack.length - 1].level) {
+              stack.pop();
+            }
+
+            const parent = stack[stack.length - 1];
+            let currentList = parent.list;
+
+            if (level > parent.level + 1) {
+              for (let fill = parent.level + 1; fill < level; fill += 1) {
+                const phantomItem = document.createElement("li");
+                phantomItem.className = "page-toc-item";
+                const phantomList = document.createElement("ul");
+                phantomList.className = "page-toc-sublist";
+                phantomItem.appendChild(phantomList);
+                currentList.appendChild(phantomItem);
+                currentList = phantomList;
+              }
+            }
+
+            const item = document.createElement("li");
+            item.className = "page-toc-item";
+
+            const line = document.createElement("div");
+            line.className = "page-toc-line";
+
+            const link = document.createElement("a");
+            link.className = "page-toc-link";
+            link.href = "#" + id;
+            link.textContent = text;
+
+            line.appendChild(link);
+            item.appendChild(line);
+            currentList.appendChild(item);
+
+            const childList = document.createElement("ul");
+            childList.className = "page-toc-sublist";
+            item.appendChild(childList);
+            stack.push({ level, list: childList, item });
+          });
+
+          const items = Array.from(tocRoot.querySelectorAll(".page-toc-item"));
+          items.forEach((item) => {
+            const childList = item.querySelector(":scope > .page-toc-sublist");
+            const line = item.querySelector(":scope > .page-toc-line");
+            if (!(childList instanceof HTMLElement) || !(line instanceof HTMLElement)) {
+              return;
+            }
+            if (childList.children.length === 0) {
+              childList.remove();
+              return;
+            }
+
+            const arrow = document.createElement("button");
+            arrow.type = "button";
+            arrow.className = "page-toc-arrow";
+            arrow.textContent = "▾";
+            arrow.setAttribute("aria-expanded", "true");
+
+            arrow.addEventListener("click", () => {
+              const expanded = arrow.getAttribute("aria-expanded") === "true";
+              arrow.setAttribute("aria-expanded", expanded ? "false" : "true");
+              arrow.textContent = expanded ? "▸" : "▾";
+              childList.hidden = expanded;
+            });
+
+            line.prepend(arrow);
+          });
+        };
+
+        buildToc();
+
+        if (tocContainer instanceof HTMLElement && tocToggle instanceof HTMLButtonElement) {
+          tocToggle.addEventListener("click", () => {
+            const isCollapsed = tocContainer.getAttribute("aria-collapsed") === "true";
+            tocContainer.setAttribute("aria-collapsed", isCollapsed ? "false" : "true");
+            tocToggle.textContent = isCollapsed ? "hide" : "show";
+          });
+        }
+
         const postHeight = () => {
           const height = Math.max(
             document.body.scrollHeight,
@@ -141,7 +389,10 @@ export function WikipediaArticleView({
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {
+      if (
+        !iframeRef.current ||
+        event.source !== iframeRef.current.contentWindow
+      ) {
         return;
       }
 
@@ -150,8 +401,14 @@ export function WikipediaArticleView({
         return;
       }
 
-      if (payload.type === "height" && typeof payload.height === "number" && Number.isFinite(payload.height)) {
-        setIframeHeight(Math.min(Math.max(Math.ceil(payload.height), 500), 4000));
+      if (
+        payload.type === "height" &&
+        typeof payload.height === "number" &&
+        Number.isFinite(payload.height)
+      ) {
+        setIframeHeight(
+          Math.min(Math.max(Math.ceil(payload.height), 500), 4000),
+        );
         return;
       }
 
@@ -176,7 +433,9 @@ export function WikipediaArticleView({
   return (
     <article className="race-wiki-shell w-full bg-white px-1 py-3 text-[#202122] sm:px-2">
       {errorMessage ? (
-        <div className="mt-4 border border-[#d33] bg-[#fee7e6] px-3 py-2 text-sm text-[#202122]">{errorMessage}</div>
+        <div className="mt-4 border border-[#d33] bg-[#fee7e6] px-3 py-2 text-sm text-[#202122]">
+          {errorMessage}
+        </div>
       ) : null}
 
       {isLoading ? (

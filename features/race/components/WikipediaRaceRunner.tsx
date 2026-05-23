@@ -70,6 +70,10 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
   const runSubmittedRef = useRef(false);
   const raceInitKeyRef = useRef<string | null>(null);
   const isLeavingRaceRef = useRef(false);
+  const pendingUrlSyncRef = useRef<string | null>(null);
+  const skipNextArticleUrlSyncRef = useRef(false);
+  const startBackGuardArmedRef = useRef(false);
+  const pausedForArticleLoadRef = useRef(false);
 
   const startFromUrl = safeTitleParam(searchParams.get("start"));
   const targetFromUrl = safeTitleParam(searchParams.get("target"));
@@ -278,10 +282,24 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
     setSavedRun(null);
     setCountdownValue(null);
     resetTimer();
+    pendingUrlSyncRef.current = null;
+    skipNextArticleUrlSyncRef.current = false;
+    startBackGuardArmedRef.current = false;
   }, [resetTimer, startGoalPair, randomChallengeQuery.data, randomChallengeQuery.isError]);
 
   useEffect(() => {
     if (isLeavingRaceRef.current || !currentTitle || !startTitle || !targetTitle) {
+      return;
+    }
+
+    const articleFromUrl = safeTitleParam(searchParams.get("article"));
+    const isBrowserHistoryNavigationInFlight =
+      status === "active" &&
+      !skipNextArticleUrlSyncRef.current &&
+      articleFromUrl &&
+      !titleEquals(articleFromUrl, currentTitle);
+
+    if (isBrowserHistoryNavigationInFlight) {
       return;
     }
 
@@ -290,6 +308,7 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
       searchParams.get("target") === targetTitle &&
       searchParams.get("article") === currentTitle
     ) {
+      pendingUrlSyncRef.current = null;
       return;
     }
 
@@ -297,8 +316,53 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
     nextParams.set("start", startTitle);
     nextParams.set("target", targetTitle);
     nextParams.set("article", currentTitle);
-    router.replace(`/race?${nextParams.toString()}`, { scroll: false });
-  }, [currentTitle, router, searchParams, startTitle, targetTitle]);
+    const shouldPushHistoryEntry =
+      status === "active" &&
+      titleEquals(searchParams.get("start"), startTitle) &&
+      titleEquals(searchParams.get("target"), targetTitle) &&
+      !titleEquals(searchParams.get("article"), currentTitle);
+
+    const nextUrl = `/race?${nextParams.toString()}`;
+    if (pendingUrlSyncRef.current === nextUrl) {
+      return;
+    }
+
+    if (shouldPushHistoryEntry) {
+      router.push(nextUrl, { scroll: false });
+      pendingUrlSyncRef.current = nextUrl;
+      return;
+    }
+
+    router.replace(nextUrl, { scroll: false });
+    pendingUrlSyncRef.current = nextUrl;
+  }, [currentTitle, router, searchParams, startTitle, status, targetTitle]);
+
+  useEffect(() => {
+    if (status !== "active" || isLeavingRaceRef.current) {
+      return;
+    }
+
+    const articleFromUrl = safeTitleParam(searchParams.get("article"));
+    if (!articleFromUrl) {
+      return;
+    }
+
+    if (skipNextArticleUrlSyncRef.current) {
+      if (titleEquals(articleFromUrl, currentTitle)) {
+        skipNextArticleUrlSyncRef.current = false;
+      }
+      return;
+    }
+
+    if (titleEquals(articleFromUrl, currentTitle)) {
+      return;
+    }
+
+    setLastError(null);
+    setClickCount((value) => value + 1);
+    setCurrentTitle(articleFromUrl);
+    setRoute((previous) => [...previous, { title: articleFromUrl, visitedAtOffsetMs: elapsedMs }]);
+  }, [currentTitle, elapsedMs, searchParams, status]);
 
   useEffect(() => {
     if (!articleQuery.error) {
@@ -349,6 +413,26 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
       countdownTimers.forEach((timer) => window.clearTimeout(timer));
     };
   }, [startTimer, status]);
+
+  useEffect(() => {
+    if (status !== "active") {
+      pausedForArticleLoadRef.current = false;
+      return;
+    }
+
+    if (isArticleLoading) {
+      if (!pausedForArticleLoadRef.current) {
+        stopTimer();
+        pausedForArticleLoadRef.current = true;
+      }
+      return;
+    }
+
+    if (pausedForArticleLoadRef.current) {
+      startTimer();
+      pausedForArticleLoadRef.current = false;
+    }
+  }, [isArticleLoading, startTimer, status, stopTimer]);
 
   useEffect(() => {
     if (status !== "active" || !challenge) {
@@ -414,6 +498,30 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
       return;
     }
 
+    if (titleEquals(currentTitle, startTitle) && !startBackGuardArmedRef.current) {
+      window.history.pushState({ ...(window.history.state ?? {}), wikirushStartBackGuard: true }, "", window.location.href);
+      startBackGuardArmedRef.current = true;
+    }
+
+    const onPopState = () => {
+      if (isLeavingRaceRef.current || !titleEquals(currentTitle, startTitle)) {
+        return;
+      }
+
+      const shouldGiveUp = window.confirm(
+        "Going back from the starting page will abandon this run and return you to race modes. Give up this run?"
+      );
+      if (shouldGiveUp) {
+        startBackGuardArmedRef.current = false;
+        void handleAbandon();
+        return;
+      }
+
+      window.history.pushState({ ...(window.history.state ?? {}), wikirushStartBackGuard: true }, "", window.location.href);
+      startBackGuardArmedRef.current = true;
+    };
+
+    window.addEventListener("popstate", onPopState);
     const onKeydown = (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) {
         return;
@@ -426,8 +534,11 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
     };
 
     window.addEventListener("keydown", onKeydown);
-    return () => window.removeEventListener("keydown", onKeydown);
-  }, [status]);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("keydown", onKeydown);
+    };
+  }, [currentTitle, handleAbandon, startTitle, status]);
 
   if (status === "error") {
     return (
@@ -468,6 +579,7 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
               return;
             }
 
+            skipNextArticleUrlSyncRef.current = true;
             setLastError(null);
             setClickCount((value) => value + 1);
             setCurrentTitle(nextTitle);
