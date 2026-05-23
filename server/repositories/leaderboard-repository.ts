@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_LEADERBOARD_SCOPE } from "@/lib/leaderboard-scopes";
+import { isEloScope, wikiModeIdFromEloScope } from "@/lib/mode-ratings";
 import type { LeaderboardRow } from "@/types/domain";
 
 export async function getLeaderboard(scope = DEFAULT_LEADERBOARD_SCOPE, limit = 100): Promise<LeaderboardRow[]> {
+  const safeScope = isEloScope(scope) ? scope : DEFAULT_LEADERBOARD_SCOPE;
+  const wikiMode = wikiModeIdFromEloScope(safeScope);
+
   const entries = await prisma.leaderboardEntry.findMany({
-    where: { scope },
+    where: { scope: safeScope },
     include: {
       user: {
         select: {
@@ -24,6 +28,7 @@ export async function getLeaderboard(scope = DEFAULT_LEADERBOARD_SCOPE, limit = 
           by: ["userId"],
           where: {
             userId: { in: userIds },
+            wikiMode,
             status: "COMPLETED",
           },
           _count: {
@@ -62,10 +67,12 @@ export async function getLeaderboardEntryForUser(
   userId: string,
   scope = DEFAULT_LEADERBOARD_SCOPE,
 ): Promise<{ rank: number; rating: number } | null> {
+  const safeScope = isEloScope(scope) ? scope : DEFAULT_LEADERBOARD_SCOPE;
+
   const entry = await prisma.leaderboardEntry.findUnique({
     where: {
       scope_userId: {
-        scope,
+        scope: safeScope,
         userId,
       },
     },
@@ -82,7 +89,7 @@ export async function getLeaderboardEntryForUser(
 
   const aheadCount = await prisma.leaderboardEntry.count({
     where: {
-      scope,
+      scope: safeScope,
       OR: [
         { rating: { gt: entry.rating } },
         {

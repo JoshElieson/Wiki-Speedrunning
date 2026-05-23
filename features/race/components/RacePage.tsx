@@ -1,21 +1,52 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { DEFAULT_ELO } from "@/lib/elo";
+
+import { buildRaceModeSummaries, getWikiModeId, type WikiModeId, profileToRaceModeStats } from "@/lib/wiki-modes";
 import type { ProfileSnapshot } from "@/types/domain";
+
 import { RaceModeSelection } from "./RaceModeSelection";
 import { WikipediaRaceRunner } from "./WikipediaRaceRunner";
-import type { RaceModeSummary } from "./race-mode-types";
-import { getRaceTierLabel } from "@/lib/race-tier";
 
 type RaceTabView = "modeSelection" | "activeRace";
 
+function safeSearchParam(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function resolveModeFromSearchParam(raw: string | null): WikiModeId {
+  try {
+    return getWikiModeId(raw ?? "wikipedia");
+  } catch {
+    return "wikipedia";
+  }
+}
+
+function hasRaceUrlParams(searchParams: URLSearchParams): boolean {
+  return Boolean(safeSearchParam(searchParams.get("start")) && safeSearchParam(searchParams.get("target")));
+}
+
 export function RacePage() {
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const username = session?.user?.username;
   const [view, setView] = useState<RaceTabView>("modeSelection");
+  const [activeMode, setActiveMode] = useState<WikiModeId>("wikipedia");
+
+  useEffect(() => {
+    if (hasRaceUrlParams(searchParams)) {
+      setActiveMode(resolveModeFromSearchParam(searchParams.get("mode")));
+      setView("activeRace");
+    }
+  }, [searchParams]);
 
   const profileQuery = useQuery({
     queryKey: ["profile", username],
@@ -30,101 +61,21 @@ export function RacePage() {
     retry: 1,
   });
 
-  const categoryRatings = useMemo(() => {
-    const entries = profileQuery.data?.categoryElos ?? [];
-    return new Map(entries.map((entry) => [entry.scope, entry.rating]));
-  }, [profileQuery.data?.categoryElos]);
-
-  const wikipediaRating = profileQuery.data?.rating ?? DEFAULT_ELO;
-  const wikipediaBestTime = (profileQuery.data?.bestTimeMs ?? 0) > 0 ? profileQuery.data?.bestTimeMs ?? null : null;
-  const wikipediaRuns = profileQuery.data?.totalRuns ?? 0;
-  const rankStatus = getRaceTierLabel(wikipediaRating);
-
-  const raceModes = useMemo<RaceModeSummary[]>(
-    () => [
-      {
-        id: "wikipedia",
-        name: "Wikipedia",
-        description: "Classic wiki speedrunning across the full encyclopedia.",
-        rating: wikipediaRating,
-        bestTime: wikipediaBestTime,
-        runs: wikipediaRuns,
-        enabled: true,
-        tags: ["Ranked", "Classic"],
-        ctaLabel: "Start Wikipedia Run",
-      },
-      {
-        id: "minecraft",
-        name: "Minecraft Wiki",
-        description: "Race through blocks, mobs, items, and mechanics.",
-        rating: categoryRatings.get("minecraft") ?? DEFAULT_ELO,
-        bestTime: null,
-        runs: 0,
-        enabled: false,
-        tags: ["Variety", "Coming Soon"],
-        ctaLabel: "Start Run",
-      },
-      {
-        id: "league",
-        name: "League of Legends Wiki",
-        description: "Navigate champions, items, abilities, and lore.",
-        rating: categoryRatings.get("league") ?? DEFAULT_ELO,
-        bestTime: null,
-        runs: 0,
-        enabled: false,
-        tags: ["Variety", "Coming Soon"],
-        ctaLabel: "Start Run",
-      },
-      {
-        id: "pokemon",
-        name: "Pokemon Wiki",
-        description: "Speedrun through Pokemon, moves, regions, and types.",
-        rating: categoryRatings.get("pokemon") ?? DEFAULT_ELO,
-        bestTime: null,
-        runs: 0,
-        enabled: false,
-        tags: ["Variety", "Coming Soon"],
-        ctaLabel: "Start Run",
-      },
-      {
-        id: "starwars",
-        name: "Star Wars Wiki",
-        description: "Explore characters, planets, ships, and timelines.",
-        rating: categoryRatings.get("star-wars") ?? DEFAULT_ELO,
-        bestTime: null,
-        runs: 0,
-        enabled: false,
-        tags: ["Variety", "Coming Soon"],
-        ctaLabel: "Start Run",
-      },
-      {
-        id: "marvel",
-        name: "Marvel Wiki",
-        description: "Race through heroes, teams, villains, and story arcs.",
-        rating: categoryRatings.get("marvel") ?? DEFAULT_ELO,
-        bestTime: null,
-        runs: 0,
-        enabled: false,
-        tags: ["Variety", "Coming Soon"],
-        ctaLabel: "Start Run",
-      },
-    ],
-    [categoryRatings, wikipediaBestTime, wikipediaRating, wikipediaRuns],
-  );
-
+  const profileStats = useMemo(() => profileToRaceModeStats(profileQuery.data), [profileQuery.data]);
+  const raceModes = useMemo(() => buildRaceModeSummaries(profileStats), [profileStats]);
   if (view === "activeRace") {
-    return <WikipediaRaceRunner onReturnToSelection={() => setView("modeSelection")} />;
+    return <WikipediaRaceRunner modeId={activeMode} onReturnToSelection={() => setView("modeSelection")} />;
   }
 
   return (
     <RaceModeSelection
       modes={raceModes}
-      primaryRating={wikipediaRating}
-      rankStatus={rankStatus}
       onSelectMode={(modeId) => {
-        if (modeId !== "wikipedia") {
+        const selected = raceModes.find((mode) => mode.id === modeId);
+        if (!selected?.enabled) {
           return;
         }
+        setActiveMode(getWikiModeId(modeId));
         setView("activeRace");
       }}
     />

@@ -34,11 +34,14 @@ const VARIETY_MODE_CHALLENGE_TITLES: Record<DailyChallengeMode, string> = {
   clicks: "Daily Efficiency Challenge",
 };
 
-function raceHref(challenge: ChallengeDescriptor) {
+function raceHref(challenge: ChallengeDescriptor, modeId?: string) {
   const params = new URLSearchParams({
     start: challenge.startTitle,
     target: challenge.targetTitle,
   });
+  if (modeId) {
+    params.set("mode", modeId);
+  }
   return `/race?${params.toString()}`;
 }
 
@@ -52,6 +55,7 @@ function DailyChallengeSection({
   headingClassName,
   accentTopBorderClassName,
   accentDotClassName,
+  modeId,
 }: {
   heading?: string;
   gameLabel?: string;
@@ -62,6 +66,7 @@ function DailyChallengeSection({
   headingClassName?: string;
   accentTopBorderClassName?: string;
   accentDotClassName?: string;
+  modeId?: string;
 }) {
   const hasVarietyTitle = Boolean(logo && gameLabel && challengeSubtitle);
   const title = hasVarietyTitle ? (
@@ -77,7 +82,7 @@ function DailyChallengeSection({
   );
 
   return (
-    <Link href={raceHref(challenge)} className={dailyBlockLinkClassName}>
+    <Link href={raceHref(challenge, modeId)} className={dailyBlockLinkClassName}>
       {accentTopBorderClassName ? (
         <span
           className={cn("pointer-events-none absolute inset-x-0 top-0 h-0.5", accentTopBorderClassName)}
@@ -157,6 +162,7 @@ function VarietyDailySection({ entries }: { entries: DailyVarietyChallengeEntry[
             challengeSubtitle={VARIETY_MODE_CHALLENGE_TITLES[entry.mode]}
             objective={entry.objective}
             challenge={entry.challenge}
+            modeId={scope}
             logo={<VarietyCategoryLogo scope={scope} badgeClassName={categoryMeta.accent.badgeBg} />}
             headingClassName="text-[var(--foreground)]"
             accentTopBorderClassName={categoryMeta.accent.topBorder}

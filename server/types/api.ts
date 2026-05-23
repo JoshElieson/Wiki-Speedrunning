@@ -1,5 +1,6 @@
 import type { ChallengeDescriptor, LeaderboardRow, RunStepInput, WikiArticle } from "@/types/domain";
-import type { MatchHistoryFilters, RunDetail, RunHistoryItem, SaveRunRequest, SaveRunResponse } from "./run-history";
+import type { WikiModeId } from "@/lib/wiki-modes";
+import type { MatchHistoryFilters, RunDetail, RunHistoryItem, SaveRunRequest, SaveRunResponse, SaveRunStepInput } from "./run-history";
 
 export interface ApiErrorObject {
   code: string;
@@ -28,6 +29,7 @@ export interface CreateChallengeRequest {
   shortestPathHint?: number;
   seed?: string;
   isActive?: boolean;
+  wikiId?: WikiModeId;
 }
 
 export interface ValidateMoveRequest {
@@ -36,6 +38,7 @@ export interface ValidateMoveRequest {
   nextTitle: string;
   targetTitle?: string;
   path?: string[];
+  wikiId?: WikiModeId;
 }
 
 export interface ValidateMoveResponse {
@@ -49,18 +52,21 @@ export interface ValidateMoveResponse {
 
 export interface RunSubmissionRequest {
   challengeId: string;
+  wikiMode?: WikiModeId;
+  wikiId?: WikiModeId;
   userId?: string;
   /** When false, the run is stored as ABANDONED (partial route). Defaults to true. */
   completed?: boolean;
   durationMs: number;
   clickCount: number;
   route: string[];
-  steps: RunStepInput[];
+  steps: Array<RunStepInput | SaveRunStepInput>;
   challengeSnapshot?: {
     label: string;
     startTitle: string;
     targetTitle: string;
     difficultyScore: number;
+    wikiId?: WikiModeId;
   };
 }
 

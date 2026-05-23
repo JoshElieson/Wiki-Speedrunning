@@ -4,7 +4,7 @@ import {
   type VarietyCategoryAccent,
 } from "@/lib/profile-elo-categories";
 
-export type RaceModeId = "wikipedia" | "minecraft" | "league" | "pokemon" | "starwars" | "marvel";
+export type RaceModeId = "wikipedia" | "minecraft" | "league" | "pokemon" | "star-wars" | "starwars" | "marvel";
 
 export type RaceModeTheme = {
   id: RaceModeId;
@@ -41,6 +41,7 @@ const RACE_MODE_ID_TO_VARIETY_SCOPE: Record<Exclude<RaceModeId, "wikipedia">, Pr
   minecraft: "minecraft",
   league: "league",
   pokemon: "pokemon",
+  "star-wars": "star-wars",
   starwars: "star-wars",
   marvel: "marvel",
 };
@@ -73,17 +74,19 @@ function buildVarietyTheme(id: Exclude<RaceModeId, "wikipedia">, displayTitle: s
 }
 
 function getVarietyCtaClass(scope: ProfileVarietyScope): string {
+  const whiteBase = "bg-white shadow-none hover:bg-white active:bg-white";
+
   switch (scope) {
     case "minecraft":
-      return "border-emerald-700 bg-transparent text-emerald-300 shadow-none hover:border-emerald-700 hover:text-white";
+      return `${whiteBase} border-emerald-700 text-emerald-700 hover:border-emerald-700 hover:text-white`;
     case "league":
-      return "border-[#C89B3C] bg-transparent text-[#C89B3C] shadow-none hover:border-[#C89B3C] hover:text-[#1a1408]";
+      return `${whiteBase} border-[#C89B3C] text-[#C89B3C] hover:border-[#C89B3C] hover:text-[#1a1408]`;
     case "pokemon":
-      return "border-blue-700 bg-transparent text-blue-400 shadow-none hover:border-blue-700 hover:text-white";
+      return `${whiteBase} border-blue-700 text-blue-700 hover:border-blue-700 hover:text-white`;
     case "star-wars":
-      return "border-yellow-500 bg-transparent text-yellow-400 shadow-none hover:border-yellow-500 hover:text-[#1a1408]";
+      return `${whiteBase} border-yellow-500 text-yellow-600 hover:border-yellow-500 hover:text-[#1a1408]`;
     case "marvel":
-      return "border-rose-600 bg-transparent text-rose-400 shadow-none hover:border-rose-600 hover:text-white";
+      return `${whiteBase} border-rose-600 text-rose-600 hover:border-rose-600 hover:text-white`;
   }
 }
 
@@ -107,10 +110,12 @@ const RACE_MODE_THEMES: Record<RaceModeId, RaceModeTheme> = {
   minecraft: buildVarietyTheme("minecraft", "Minecraft Wiki Speedrun"),
   league: buildVarietyTheme("league", "League of Legends Wiki Speedrun"),
   pokemon: buildVarietyTheme("pokemon", "Pokemon Wiki Speedrun"),
+  "star-wars": buildVarietyTheme("star-wars", "Star Wars Wiki Speedrun"),
   starwars: buildVarietyTheme("starwars", "Star Wars Wiki Speedrun"),
   marvel: buildVarietyTheme("marvel", "Marvel Wiki Speedrun"),
 };
 
 export function getRaceModeTheme(modeId: string): RaceModeTheme {
-  return RACE_MODE_THEMES[modeId as RaceModeId] ?? WIKIPEDIA_THEME;
+  const normalizedModeId = modeId === "star-wars" ? "starwars" : modeId;
+  return RACE_MODE_THEMES[normalizedModeId as RaceModeId] ?? WIKIPEDIA_THEME;
 }

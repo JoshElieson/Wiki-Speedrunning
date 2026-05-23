@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/server/errors/api-error";
 import type { CreateChallengeRequest } from "@/server/types/api";
 import type { ChallengeDescriptor, DifficultyTier } from "@/types/domain";
+import { getWikiModeId } from "@/lib/wiki-modes";
 import { normalizeWikiTitle } from "@/server/services/wiki/title-normalization";
 import { ensureArticleRecord } from "./wiki-repository";
 
@@ -36,6 +37,7 @@ function toChallengeDescriptor(data: {
 export async function createChallenge(input: CreateChallengeRequest): Promise<ChallengeDescriptor> {
   const normalizedStartTitle = normalizeWikiTitle(input.startTitle);
   const normalizedTargetTitle = normalizeWikiTitle(input.targetTitle);
+  const wikiId = getWikiModeId(input.wikiId);
 
   if (!normalizedStartTitle || !normalizedTargetTitle) {
     throw new ApiError(400, "INVALID_CHALLENGE_TITLES", "Start and target titles are required");
@@ -46,8 +48,8 @@ export async function createChallenge(input: CreateChallengeRequest): Promise<Ch
   }
 
   const [startArticle, targetArticle] = await Promise.all([
-    ensureArticleRecord(input.startTitle),
-    ensureArticleRecord(input.targetTitle),
+    ensureArticleRecord(input.startTitle, wikiId),
+    ensureArticleRecord(input.targetTitle, wikiId),
   ]);
 
   const label = input.label.trim();

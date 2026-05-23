@@ -108,6 +108,7 @@ model Run {
   id                  String         @id @default(cuid())
   userId              String
   challengeId         String
+  wikiMode            String         @default("wikipedia")
   status              RunStatus      @default(COMPLETED)
   durationMs          Int
   clickCount          Int
@@ -126,6 +127,7 @@ model Run {
 
   @@index([challengeId, durationMs])
   @@index([userId, createdAt])
+  @@index([userId, wikiMode, status])
   @@index([status, createdAt])
 }
 

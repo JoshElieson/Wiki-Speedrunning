@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { DEFAULT_LEADERBOARD_SCOPE, LEADERBOARD_SCOPES } from "@/lib/leaderboard-scopes";
+import { SUPPORTED_WIKI_IDS, WIKI_MODE_IDS } from "@/lib/wiki-modes";
 
 export const wikiArticleQuerySchema = z.object({
   title: z.string().trim().min(1, "Article title is required"),
+  wikiId: z.enum(SUPPORTED_WIKI_IDS).nullish(),
+  mode: z.enum(WIKI_MODE_IDS).nullish(),
 });
 
 export const createChallengeBodySchema = z.object({
@@ -22,6 +25,7 @@ export const validateMoveBodySchema = z.object({
   nextTitle: z.string().trim().min(1),
   targetTitle: z.string().trim().optional(),
   path: z.array(z.string().trim().min(1)).optional(),
+  wikiId: z.enum(WIKI_MODE_IDS).optional(),
 });
 
 const legacyRunStepSchema = z.object({
@@ -36,12 +40,14 @@ const canonicalRunStepSchema = z.object({
   normalizedArticleTitle: z.string().trim().min(1).optional(),
   elapsedMs: z.number().int().min(0),
   articleUrl: z.string().trim().url().optional(),
+  visitedAtIso: z.string().datetime().optional(),
   kind: z.enum(["start", "intermediate", "target"]).optional(),
 });
 
 export const saveRunBodySchema = z
   .object({
     challengeId: z.string().trim().min(1),
+    wikiMode: z.enum(WIKI_MODE_IDS).optional(),
     userId: z.string().trim().min(1).optional().nullable(),
     completed: z.boolean().optional(),
     finalElapsedMs: z.number().int().min(0).optional(),
@@ -55,6 +61,7 @@ export const saveRunBodySchema = z
         startTitle: z.string().trim().min(1),
         targetTitle: z.string().trim().min(1),
         difficultyScore: z.number().min(1).max(100),
+        wikiId: z.enum(WIKI_MODE_IDS).optional(),
       })
       .optional(),
     difficultyScore: z.number().finite().optional(),

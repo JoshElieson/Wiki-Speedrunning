@@ -1,4 +1,5 @@
 import { ApiError } from "@/server/errors/api-error";
+import { getWikiModeConfig, getWikiModeId } from "@/lib/wiki-modes";
 import { calculateSoloEloDelta } from "@/lib/elo";
 import { getChallengeById } from "@/server/repositories/challenge-repository";
 import { getRecentRuns, getRunById, getRunsForChallenge, getRunsForUser, saveRun } from "@/server/repositories/run-repository";
@@ -16,7 +17,7 @@ import type {
 import type { RunSubmissionRequest } from "@/server/types/api";
 import { normalizeWikiTitle } from "@/server/services/wiki/title-normalization";
 import { validateCompletedRoute } from "./race/route-validation-service";
-import { applyWikipediaMatchElo, refreshWikipediaLeaderboardStats } from "./rating-service";
+import { applySoloMatchElo, refreshLeaderboardStatsForScope } from "./rating-service";
 
 function computeRunScore(durationMs: number, clickCount: number): number {
   return Math.max(1000 - Math.floor(durationMs / 100) - clickCount * 4, 0);
@@ -35,6 +36,7 @@ function asCanonicalSteps(payload: SaveRunRequest): RunStepDetail[] {
       normalizedArticleTitle: step.normalizedArticleTitle || normalizeWikiTitle(step.articleTitle),
       elapsedMs: step.elapsedMs,
       articleUrl: step.articleUrl,
+      visitedAtIso: step.visitedAtIso,
       kind: step.kind ?? stepKindForIndex(payload, index),
     }));
   }
@@ -118,12 +120,15 @@ function validateRunShape(payload: SaveRunRequest, canonicalSteps: RunStepDetail
 export async function saveCompletedRun(payload: SaveRunRequest): Promise<SaveRunResponse> {
   const canonicalSteps = asCanonicalSteps(payload);
   validateRunShape(payload, canonicalSteps);
+  const wikiModeId = getWikiModeId(payload.wikiMode);
+  const wikiScope = getWikiModeConfig(wikiModeId).eloScope;
 
   const challenge = await getChallengeById(payload.challengeId);
   await validateCompletedRoute({
     challengeStartTitle: challenge.startTitle,
     challengeTargetTitle: challenge.targetTitle,
     route: payload.route,
+    wikiId: wikiModeId,
     steps: payload.route.slice(1).map((toTitle, index) => ({
       fromTitle: payload.route[index],
       toTitle,
@@ -139,6 +144,7 @@ export async function saveCompletedRun(payload: SaveRunRequest): Promise<SaveRun
   const run = await saveRun({
     userId: user.id,
     challengeId: payload.challengeId,
+    wikiMode: wikiModeId,
     status: "COMPLETED",
     durationMs: payload.finalElapsedMs,
     clickCount: payload.clickCount,
@@ -149,14 +155,15 @@ export async function saveCompletedRun(payload: SaveRunRequest): Promise<SaveRun
     routeSteps: canonicalSteps,
   });
 
-  const eloDelta = await applyWikipediaMatchElo({
+  const eloDelta = await applySoloMatchElo({
     userId: user.id,
+    scope: wikiScope,
     completed: true,
     durationMs: payload.finalElapsedMs,
     clickCount: payload.clickCount,
     runId: run.id,
   });
-  await refreshWikipediaLeaderboardStats(user.id);
+  await refreshLeaderboardStatsForScope(user.id, wikiScope);
 
   return { run: { ...run, eloDelta } };
 }
@@ -164,6 +171,8 @@ export async function saveCompletedRun(payload: SaveRunRequest): Promise<SaveRun
 export async function saveAbandonedRun(payload: SaveRunRequest): Promise<SaveRunResponse> {
   const canonicalSteps = asCanonicalSteps(payload);
   validateAbandonedRunShape(payload, canonicalSteps);
+  const wikiModeId = getWikiModeId(payload.wikiMode);
+  const wikiScope = getWikiModeConfig(wikiModeId).eloScope;
 
   const user = await ensureUser(payload.userId ?? undefined);
   const finishedAt = payload.completedAt ? new Date(payload.completedAt) : new Date();
@@ -172,6 +181,7 @@ export async function saveAbandonedRun(payload: SaveRunRequest): Promise<SaveRun
   const run = await saveRun({
     userId: user.id,
     challengeId: payload.challengeId,
+    wikiMode: wikiModeId,
     status: "ABANDONED",
     durationMs: payload.finalElapsedMs,
     clickCount: payload.clickCount,
@@ -182,35 +192,49 @@ export async function saveAbandonedRun(payload: SaveRunRequest): Promise<SaveRun
     routeSteps: canonicalSteps,
   });
 
-  const eloDelta = await applyWikipediaMatchElo({
+  const eloDelta = await applySoloMatchElo({
     userId: user.id,
+    scope: wikiScope,
     completed: false,
     durationMs: payload.finalElapsedMs,
     clickCount: payload.clickCount,
     runId: run.id,
   });
-  await refreshWikipediaLeaderboardStats(user.id);
+  await refreshLeaderboardStatsForScope(user.id, wikiScope);
 
   return { run: { ...run, eloDelta } };
 }
 
 function fromLegacyPayload(payload: RunSubmissionRequest): SaveRunRequest {
   const completed = payload.completed !== false;
+  const hasCanonicalSteps =
+    payload.steps.length > 0 && payload.steps.every((step): step is SaveRunStepInput => "articleTitle" in step);
   const request: SaveRunRequest = {
     challengeId: payload.challengeId,
+    wikiMode: payload.wikiMode ?? payload.challengeSnapshot?.wikiId,
     userId: payload.userId,
     completed,
     finalElapsedMs: payload.durationMs,
     clickCount: payload.clickCount,
     route: payload.route,
     difficultyScore: payload.challengeSnapshot?.difficultyScore,
-    steps: payload.route.map((articleTitle, index) => ({
-      stepIndex: index,
-      articleTitle,
-      normalizedArticleTitle: normalizeWikiTitle(articleTitle),
-      elapsedMs: index === 0 ? 0 : payload.steps[index - 1]?.clickedAtOffsetMs ?? 0,
-      kind: index === 0 ? "start" : completed && index === payload.route.length - 1 ? "target" : "intermediate",
-    })),
+    steps: hasCanonicalSteps
+      ? payload.steps
+      : payload.route.map((articleTitle, index) => {
+          const previousStep = payload.steps[index - 1];
+          return {
+            stepIndex: index,
+            articleTitle,
+            normalizedArticleTitle: normalizeWikiTitle(articleTitle),
+            elapsedMs:
+              index === 0
+                ? 0
+                : previousStep && "clickedAtOffsetMs" in previousStep
+                  ? previousStep.clickedAtOffsetMs
+                  : 0,
+            kind: index === 0 ? "start" : completed && index === payload.route.length - 1 ? "target" : "intermediate",
+          };
+        }),
   };
   return request;
 }
@@ -223,13 +247,18 @@ function makeInMemoryRun(payload: RunSubmissionRequest): RunDetail {
   const startArticleTitle = payload.challengeSnapshot?.startTitle ?? payload.route[0] ?? "Unknown";
   const targetArticleTitle = payload.challengeSnapshot?.targetTitle ?? "Unknown";
 
-  const steps = payload.route.map((articleTitle, index) => ({
-    stepIndex: index,
-    articleTitle,
-    normalizedArticleTitle: normalizeWikiTitle(articleTitle),
-    elapsedMs: index === 0 ? 0 : payload.steps[index - 1]?.clickedAtOffsetMs ?? 0,
-    kind: index === 0 ? "start" : completed && index === payload.route.length - 1 ? "target" : "intermediate",
-  })) satisfies RunStepDetail[];
+  const steps = payload.route.map((articleTitle, index) => {
+    const previousStep = payload.steps[index - 1];
+    const canonicalStep = payload.steps[index];
+    return {
+      stepIndex: index,
+      articleTitle,
+      normalizedArticleTitle: normalizeWikiTitle(articleTitle),
+      elapsedMs: index === 0 ? 0 : previousStep && "clickedAtOffsetMs" in previousStep ? previousStep.clickedAtOffsetMs : 0,
+      visitedAtIso: canonicalStep && "visitedAtIso" in canonicalStep ? canonicalStep.visitedAtIso : undefined,
+      kind: index === 0 ? "start" : completed && index === payload.route.length - 1 ? "target" : "intermediate",
+    };
+  }) satisfies RunStepDetail[];
   const routePath: RoutePathData = {
     version: "route_path_v1",
     nodes: steps.map((step) => ({
@@ -237,6 +266,7 @@ function makeInMemoryRun(payload: RunSubmissionRequest): RunDetail {
       articleTitle: step.articleTitle,
       normalizedArticleTitle: step.normalizedArticleTitle,
       elapsedMs: step.elapsedMs,
+      visitedAtIso: step.visitedAtIso,
     })),
   };
 
@@ -273,16 +303,29 @@ function makeInMemoryRun(payload: RunSubmissionRequest): RunDetail {
 export async function submitRun(payload: RunSubmissionRequest): Promise<RunDetail> {
   const challengeStartTitle = payload.challengeSnapshot?.startTitle;
   const challengeTargetTitle = payload.challengeSnapshot?.targetTitle;
+  const wikiModeId = getWikiModeId(payload.wikiMode);
   const completed = payload.completed !== false;
   const saveRequest = fromLegacyPayload(payload);
 
   try {
     if (completed && challengeStartTitle && challengeTargetTitle) {
+      const transitionSteps: Array<{ fromTitle: string; toTitle: string; clickedAtOffsetMs: number }> =
+        payload.steps.length > 0 && payload.steps.every((step): step is SaveRunStepInput => "articleTitle" in step)
+          ? payload.route.slice(1).map((toTitle, index) => {
+              const canonicalStep = payload.steps[index + 1] as SaveRunStepInput | undefined;
+              return {
+                fromTitle: payload.route[index],
+                toTitle,
+                clickedAtOffsetMs: canonicalStep?.elapsedMs ?? 0,
+              };
+            })
+          : (payload.steps as Array<{ fromTitle: string; toTitle: string; clickedAtOffsetMs: number }>);
       await validateCompletedRoute({
         challengeStartTitle,
         challengeTargetTitle,
+        wikiId: wikiModeId,
         route: payload.route,
-        steps: payload.steps,
+        steps: transitionSteps,
       });
     }
 

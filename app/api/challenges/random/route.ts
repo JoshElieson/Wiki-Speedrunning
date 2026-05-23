@@ -1,10 +1,11 @@
-import { asApiError } from "@/server/errors/api-error";
-import { getNextGeneratedChallenge } from "@/server/services/challenge-service";
 import { NextResponse } from "next/server";
+import { asApiError } from "@/server/errors/api-error";
+import { getNextGeneratedChallengeForWiki } from "@/server/services/challenge-service";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const challenge = await getNextGeneratedChallenge();
+    const { searchParams } = new URL(request.url);
+    const challenge = await getNextGeneratedChallengeForWiki(searchParams.get("mode") ?? searchParams.get("wikiId"));
     return NextResponse.json(challenge);
   } catch (error) {
     const apiError = asApiError(error);

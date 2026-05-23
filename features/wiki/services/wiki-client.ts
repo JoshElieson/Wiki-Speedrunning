@@ -1,72 +1,38 @@
 import type { WikiArticle } from "@/types/domain";
 import { parseJsonOrThrow } from "@/lib/parse-json-response";
-import { normalizeWikiTitle, raceTargetTitleMatches, toWikiTitleKey } from "./title-normalization";
+import { getWikiMode, resolveWikiModeId, type WikiModeId } from "@/lib/wiki-modes";
 
-export async function fetchArticle(title: string): Promise<WikiArticle> {
-  const response = await fetch(`/api/wiki/article?title=${encodeURIComponent(title)}`);
+export async function fetchArticleForMode(modeId: WikiModeId, title: string): Promise<WikiArticle> {
+  const mode = getWikiMode(modeId);
+  const params = new URLSearchParams({ title, wikiId: mode.id });
+  const response = await fetch(`${mode.articleApiPath}?${params.toString()}`);
   return parseJsonOrThrow<WikiArticle>(response, "Failed to fetch article");
 }
 
-export function normalizeTitle(title: string): string {
-  return normalizeWikiTitle(title);
+export async function fetchArticle(title: string, modeId: WikiModeId = "wikipedia"): Promise<WikiArticle> {
+  return fetchArticleForMode(resolveWikiModeId(modeId), title);
 }
 
-export function titleEquals(left: string, right: string): boolean {
-  return toWikiTitleKey(normalizeWikiTitle(left)) === toWikiTitleKey(normalizeWikiTitle(right));
+export function normalizeTitle(title: string, modeId: WikiModeId = "wikipedia"): string {
+  return getWikiMode(resolveWikiModeId(modeId)).normalizePageTitle(title);
+}
+
+export function titleEquals(left: string, right: string, modeId: WikiModeId = "wikipedia"): boolean {
+  const mode = getWikiMode(resolveWikiModeId(modeId));
+  return mode.toPageTitleKey(mode.normalizePageTitle(left)) === mode.toPageTitleKey(mode.normalizePageTitle(right));
 }
 
 export function reachedRaceTarget(
   visitedTitle: string,
   targetTitle: string,
   canonicalTitle?: string | null,
+  modeId: WikiModeId = "wikipedia",
 ): boolean {
-  return raceTargetTitleMatches(visitedTitle, targetTitle, canonicalTitle);
+  return getWikiMode(resolveWikiModeId(modeId)).matchesRaceTarget(visitedTitle, targetTitle, canonicalTitle);
 }
 
-export function extractInternalArticleTitle(href: string): string | null {
-  if (!href) {
-    return null;
-  }
-
-  if (href.startsWith("#")) {
-    return null;
-  }
-
-  const trimmedHref = href.trim();
-  const wikiPathPrefix = "/wiki/";
-  const wikiUrlPattern = /^https?:\/\/([a-z-]+\.)?wikipedia\.org/i;
-
-  if (trimmedHref.startsWith(wikiPathPrefix)) {
-    return decodeWikiPathTitle(trimmedHref.slice(wikiPathPrefix.length));
-  }
-
-  if (wikiUrlPattern.test(trimmedHref)) {
-    try {
-      const parsed = new URL(trimmedHref);
-      if (!parsed.pathname.startsWith(wikiPathPrefix)) {
-        return null;
-      }
-      return decodeWikiPathTitle(parsed.pathname.slice(wikiPathPrefix.length));
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
+export function extractInternalArticleTitle(href: string, modeId: WikiModeId = "wikipedia"): string | null {
+  return getWikiMode(resolveWikiModeId(modeId)).extractTitleFromHref(href);
 }
 
-function decodeWikiPathTitle(raw: string): string | null {
-  const withoutQuery = raw.split("?")[0]?.split("#")[0] ?? "";
-  if (!withoutQuery || withoutQuery.includes(":")) {
-    return null;
-  }
-
-  const decoded = decodeURIComponent(withoutQuery).replace(/_/g, " ").trim();
-  if (!decoded) {
-    return null;
-  }
-
-  return decoded;
-}
-
-export const fetchWikiArticle = fetchArticle;
+export const fetchWikiArticle = (title: string) => fetchArticleForMode("wikipedia", title);

@@ -29,7 +29,7 @@ export function useRaceController() {
 
   const challengeQuery = useQuery({
     queryKey: ["challenge", "random"],
-    queryFn: fetchRandomChallenge,
+    queryFn: () => fetchRandomChallenge(),
     enabled: false,
     retry: 1,
   });
@@ -191,7 +191,7 @@ export function useRaceController() {
     try {
       const challenge = await queryClient.fetchQuery({
         queryKey: ["challenge", "random"],
-        queryFn: fetchRandomChallenge,
+        queryFn: () => fetchRandomChallenge(),
       });
       race.startRace(challenge, challenge.startTitle);
       await queryClient.invalidateQueries({ queryKey: ["wiki", "article"] });

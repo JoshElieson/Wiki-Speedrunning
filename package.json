@@ -15,7 +15,9 @@
     "prisma:clear-dummies": "node scripts/clear-dummy-users.mjs",
     "prisma:studio": "prisma studio",
     "db:up": "docker compose up -d",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "test:wiki-modes": "tsx --test lib/wiki-modes/wiki-modes.test.ts",
+    "test:mode-ratings": "tsx --test lib/mode-ratings.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
@@ -43,6 +45,8 @@
     "seed": "node prisma/seed.mjs"
   },
   "devDependencies": {
+    "@playwright/mcp": "^0.0.75",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -1,11 +1,11 @@
 import { REDIS_KEYS } from "@/db/constants";
 import { isDatabaseConfigured, isPrismaConfigError } from "@/lib/database";
+import { getWikiModeConfig, getWikiModeId, type WikiModeId } from "@/lib/wiki-modes";
 import { cache } from "@/server/cache/cache";
 import { ApiError } from "@/server/errors/api-error";
-import { fetchRandomArticleTitles } from "@/server/services/wiki/wikipedia-service";
+import { fetchRandomArticleTitlesForWiki } from "@/server/services/wiki/wiki-provider";
 import {
   createChallenge,
-  getActiveChallengeCount,
   getChallengeById,
   getDailyChallengeByDateKey,
   getRandomActiveChallenge,
@@ -81,10 +81,24 @@ const DAILY_ARTICLE_POOL = [
 ];
 
 const DAILY_MODES: DailyChallengeMode[] = ["time", "clicks"];
-const GENERATED_POOL_CACHE_KEY = "challenge:generated:wikipedia-articles:v1";
 const GENERATED_POOL_SIZE = 10_000;
 const GENERATED_POOL_TTL_SECONDS = 12 * 60 * 60;
-const GENERATED_ACTIVE_CHALLENGE_TARGET = 10_000;
+const POKEMON_FALLBACK_TITLES = [
+  "Bulbasaur",
+  "Charizard",
+  "Pikachu",
+  "Lucario",
+  "Mewtwo",
+  "Pokédex",
+  "Poké Ball",
+  "Mega Evolution",
+  "Kanto",
+  "Pokémon type",
+  "Ability",
+  "Held item",
+  "Gym Leader",
+  "Pokémon move",
+];
 
 const DAILY_MODE_OBJECTIVES: Record<DailyChallengeMode, string> = {
   time: "Reach the target as fast as possible!",
@@ -116,6 +130,29 @@ function pickFallbackGeneratedChallenge(): ChallengeDescriptor {
   return fallbackChallenge(FALLBACK_SEEDS[index], "generated", `generated-seed-${index}`);
 }
 
+function getGeneratedPoolCacheKey(wikiId: WikiModeId): string {
+  return `challenge:generated:${wikiId}-articles:v1`;
+}
+
+function uniqueFallbackTitlesForWiki(wikiId: WikiModeId): string[] {
+  if (wikiId === "pokemon") {
+    return Array.from(new Set([...(VARIETY_DAILY_ARTICLE_POOLS.pokemon ?? []), ...POKEMON_FALLBACK_TITLES]));
+  }
+  if (wikiId === "minecraft") {
+    return Array.from(new Set([...(VARIETY_DAILY_ARTICLE_POOLS.minecraft ?? []), ...uniqueFallbackTitles()]));
+  }
+  if (wikiId === "league") {
+    return Array.from(new Set([...(VARIETY_DAILY_ARTICLE_POOLS.league ?? []), ...uniqueFallbackTitles()]));
+  }
+  if (wikiId === "marvel") {
+    return Array.from(new Set([...(VARIETY_DAILY_ARTICLE_POOLS.marvel ?? []), ...uniqueFallbackTitles()]));
+  }
+  if (wikiId === "star-wars") {
+    return Array.from(new Set([...(VARIETY_DAILY_ARTICLE_POOLS["star-wars"] ?? []), ...uniqueFallbackTitles()]));
+  }
+  return uniqueFallbackTitles();
+}
+
 function uniqueFallbackTitles(): string[] {
   return Array.from(
     new Set([
@@ -125,26 +162,27 @@ function uniqueFallbackTitles(): string[] {
   );
 }
 
-async function getGeneratedArticlePool(): Promise<string[]> {
-  const cached = await cache.get<string[]>(GENERATED_POOL_CACHE_KEY);
+async function getGeneratedArticlePool(wikiId: WikiModeId): Promise<string[]> {
+  const cacheKey = getGeneratedPoolCacheKey(wikiId);
+  const cached = await cache.get<string[]>(cacheKey);
   if (cached && cached.length >= 250) {
     return cached;
   }
 
   try {
-    const randomTitles = await fetchRandomArticleTitles(GENERATED_POOL_SIZE);
-    const combined = Array.from(new Set([...randomTitles, ...uniqueFallbackTitles()]));
-    await cache.set(GENERATED_POOL_CACHE_KEY, combined, GENERATED_POOL_TTL_SECONDS);
+    const randomTitles = await fetchRandomArticleTitlesForWiki(wikiId, GENERATED_POOL_SIZE);
+    const combined = Array.from(new Set([...randomTitles, ...uniqueFallbackTitlesForWiki(wikiId)]));
+    await cache.set(cacheKey, combined, GENERATED_POOL_TTL_SECONDS);
     return combined;
   } catch (error) {
-    console.warn("[challenge-service] Failed to build generated Wikipedia title pool; using built-in fallback pool.", error);
-    const fallbackPool = uniqueFallbackTitles();
-    await cache.set(GENERATED_POOL_CACHE_KEY, fallbackPool, 5 * 60);
+    console.warn("[challenge-service] Failed to build generated title pool; using built-in fallback pool.", error);
+    const fallbackPool = uniqueFallbackTitlesForWiki(wikiId);
+    await cache.set(cacheKey, fallbackPool, 5 * 60);
     return fallbackPool;
   }
 }
 
-function buildGeneratedChallengeFromPool(pool: string[]): ChallengeDescriptor | null {
+function buildGeneratedChallengeFromPool(pool: string[], wikiId: WikiModeId): ChallengeDescriptor | null {
   if (pool.length < 2) {
     return null;
   }
@@ -160,10 +198,11 @@ function buildGeneratedChallengeFromPool(pool: string[]): ChallengeDescriptor | 
   const difficultyScore = 42 + Math.floor(Math.random() * 45);
   const shortestPathHint = Math.max(2, Math.round(difficultyScore / 20));
   const idSuffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const labelPrefix = getWikiModeConfig(wikiId).shortName ?? getWikiModeConfig(wikiId).displayName;
 
   return {
-    id: `generated-random-${idSuffix}`,
-    label: "Random Wikipedia Sprint",
+    id: `generated-random-${wikiId}-${idSuffix}`,
+    label: `Random ${labelPrefix} Sprint`,
     startTitle,
     targetTitle,
     difficultyScore,
@@ -401,18 +440,11 @@ export async function fetchChallengeById(challengeId: string) {
 }
 
 export async function getNextGeneratedChallenge(): Promise<ChallengeDescriptor> {
+  const wikiId = "wikipedia";
   if (isDatabaseConfigured()) {
     try {
-      const activeCount = await getActiveChallengeCount();
-      if (activeCount >= GENERATED_ACTIVE_CHALLENGE_TARGET) {
-        const persisted = await getRandomActiveChallenge();
-        if (persisted) {
-          return persisted;
-        }
-      }
-
-      const pool = await getGeneratedArticlePool();
-      const generated = buildGeneratedChallengeFromPool(pool);
+      const pool = await getGeneratedArticlePool(wikiId);
+      const generated = buildGeneratedChallengeFromPool(pool, wikiId);
       if (generated) {
         return createChallenge({
           label: generated.label,
@@ -422,6 +454,7 @@ export async function getNextGeneratedChallenge(): Promise<ChallengeDescriptor> 
           shortestPathHint: generated.shortestPathHint,
           seed: generated.id,
           isActive: true,
+          wikiId,
         });
       }
 
@@ -439,8 +472,8 @@ export async function getNextGeneratedChallenge(): Promise<ChallengeDescriptor> 
   }
 
   try {
-    const pool = await getGeneratedArticlePool();
-    const generated = buildGeneratedChallengeFromPool(pool);
+    const pool = await getGeneratedArticlePool(wikiId);
+    const generated = buildGeneratedChallengeFromPool(pool, wikiId);
     if (generated) {
       return generated;
     }
@@ -449,6 +482,61 @@ export async function getNextGeneratedChallenge(): Promise<ChallengeDescriptor> 
   }
 
   return pickFallbackGeneratedChallenge();
+}
+
+export async function getNextGeneratedChallengeForWiki(rawWikiId?: string | null): Promise<ChallengeDescriptor> {
+  const wikiId = getWikiModeId(rawWikiId);
+  if (wikiId === "wikipedia") {
+    return getNextGeneratedChallenge();
+  }
+
+  if (isDatabaseConfigured()) {
+    try {
+      const pool = await getGeneratedArticlePool(wikiId);
+      const generated = buildGeneratedChallengeFromPool(pool, wikiId);
+      if (generated) {
+        const created = await createChallenge({
+          label: generated.label,
+          startTitle: generated.startTitle,
+          targetTitle: generated.targetTitle,
+          difficultyScore: generated.difficultyScore,
+          shortestPathHint: generated.shortestPathHint,
+          seed: generated.id,
+          isActive: true,
+          wikiId,
+        });
+        return { ...created, wikiId };
+      }
+    } catch (error) {
+      if (!isPrismaConfigError(error) && process.env.NODE_ENV === "production") {
+        throw error;
+      }
+
+      console.warn("[challenge-service] Database unavailable; using built-in solo challenges.", error);
+    }
+  }
+
+  try {
+    const pool = await getGeneratedArticlePool(wikiId);
+    const generated = buildGeneratedChallengeFromPool(pool, wikiId);
+    if (generated) {
+      return { ...generated, wikiId };
+    }
+  } catch (error) {
+    console.warn("[challenge-service] Failed to build dynamic generated challenge; using static fallback seeds.", error);
+  }
+
+  const fallback = pickFallbackGeneratedChallenge();
+  const wikiConfig = getWikiModeConfig(wikiId);
+  const fallbackTitles = uniqueFallbackTitlesForWiki(wikiId);
+  return {
+    ...fallback,
+    id: `${fallback.id}-${wikiId}`,
+    label: `Emergency ${wikiConfig.shortName ?? wikiConfig.displayName} Sprint`,
+    startTitle: fallbackTitles[0] ?? wikiConfig.defaultStartTitle,
+    targetTitle: fallbackTitles[1] ?? wikiConfig.defaultTargetTitle,
+    wikiId,
+  };
 }
 
 export async function getDailyChallenge(date = new Date()): Promise<ChallengeDescriptor> {

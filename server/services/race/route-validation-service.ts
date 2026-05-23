@@ -1,13 +1,15 @@
 import { ApiError } from "@/server/errors/api-error";
 import type { RunStepInput } from "@/types/domain";
+import { getWikiModeId, type WikiModeId } from "@/lib/wiki-modes";
 import { normalizeWikiTitle, raceTargetTitleMatches, toWikiTitleKey } from "@/server/services/wiki/title-normalization";
-import { isValidOutgoingLink } from "@/server/services/wiki/wikipedia-service";
+import { isValidOutgoingLinkForWiki } from "@/server/services/wiki/wiki-provider";
 
 export interface RouteValidationInput {
   challengeStartTitle: string;
   challengeTargetTitle: string;
   route: string[];
   steps: RunStepInput[];
+  wikiId?: WikiModeId;
 }
 
 export interface RouteValidationResult {
@@ -16,7 +18,7 @@ export interface RouteValidationResult {
   normalizedRoute: string[];
 }
 
-export async function validateMove(currentTitle: string, nextTitle: string, targetTitle?: string) {
+export async function validateMove(currentTitle: string, nextTitle: string, targetTitle?: string, wikiId?: WikiModeId) {
   const normalizedCurrentTitle = normalizeWikiTitle(currentTitle);
   const normalizedNextTitle = normalizeWikiTitle(nextTitle);
   const normalizedTargetTitle = targetTitle ? normalizeWikiTitle(targetTitle) : undefined;
@@ -25,7 +27,8 @@ export async function validateMove(currentTitle: string, nextTitle: string, targ
     throw new ApiError(400, "INVALID_MOVE", "Current and next article titles are required");
   }
 
-  const isValid = await isValidOutgoingLink(normalizedCurrentTitle, normalizedNextTitle);
+  const normalizedWikiId = getWikiModeId(wikiId);
+  const isValid = await isValidOutgoingLinkForWiki(normalizedWikiId, normalizedCurrentTitle, normalizedNextTitle);
   const completed = Boolean(targetTitle && isValid && raceTargetTitleMatches(nextTitle, targetTitle));
 
   return {
@@ -39,6 +42,7 @@ export async function validateMove(currentTitle: string, nextTitle: string, targ
 }
 
 export async function validateCompletedRoute(input: RouteValidationInput): Promise<RouteValidationResult> {
+  const wikiId = getWikiModeId(input.wikiId);
   const startTitle = normalizeWikiTitle(input.challengeStartTitle);
   const startTitleKey = toWikiTitleKey(startTitle);
   const normalizedRoute = input.route.map((title) => normalizeWikiTitle(title));
@@ -72,7 +76,7 @@ export async function validateCompletedRoute(input: RouteValidationInput): Promi
       throw new ApiError(400, "ROUTE_STEP_MISMATCH", "Submitted steps do not match submitted route");
     }
 
-    const validTransition = await isValidOutgoingLink(fromTitle, toTitle);
+    const validTransition = await isValidOutgoingLinkForWiki(wikiId, fromTitle, toTitle);
     if (!validTransition) {
       throw new ApiError(400, "INVALID_ROUTE_TRANSITION", `Invalid transition: ${step.fromTitle} -> ${step.toTitle}`);
     }

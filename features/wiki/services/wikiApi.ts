@@ -1,5 +1,6 @@
 export {
   fetchArticle,
+  fetchArticleForMode,
   normalizeTitle,
   extractInternalArticleTitle,
   reachedRaceTarget,

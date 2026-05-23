@@ -1,3 +1,6 @@
+import type { EloByMode, StatsByMode } from "@/lib/mode-ratings";
+import type { WikiModeId } from "@/lib/wiki-modes";
+
 export type DifficultyTier = "novice" | "intermediate" | "advanced" | "expert";
 
 export interface WikiArticleLink {
@@ -25,6 +28,7 @@ export interface ChallengeDescriptor {
   difficultyTier: DifficultyTier;
   shortestPathHint?: number;
   source: "daily" | "generated";
+  wikiId?: WikiModeId;
 }
 
 export type DailyChallengeMode = "time" | "clicks";
@@ -97,7 +101,10 @@ export interface ProfileSnapshot {
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  /** Wikipedia scope rating — same as `eloByMode.wikipedia`. */
   rating: number;
+  eloByMode: EloByMode;
+  statsByMode: StatsByMode;
   categoryElos: ProfileCategoryElo[];
   bestTimeMs: number;
   totalRuns: number;

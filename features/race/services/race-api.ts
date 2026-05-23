@@ -2,9 +2,10 @@ import type { ChallengeDescriptor, MoveValidationResult } from "@/types/domain";
 import type { RunSubmissionRequest } from "@/server/types/api";
 import type { RunDetail } from "@/server/types/run-history";
 import { parseJsonOrThrow } from "@/lib/parse-json-response";
+import type { WikiModeId } from "@/lib/wiki-modes";
 
-export async function fetchRandomChallenge(): Promise<ChallengeDescriptor> {
-  const response = await fetch("/api/challenges/random");
+export async function fetchRandomChallenge(wikiMode: WikiModeId = "wikipedia"): Promise<ChallengeDescriptor> {
+  const response = await fetch(`/api/challenges/random?wikiId=${encodeURIComponent(wikiMode)}`);
   return parseJsonOrThrow<ChallengeDescriptor>(response, "Failed to fetch challenge");
 }
 

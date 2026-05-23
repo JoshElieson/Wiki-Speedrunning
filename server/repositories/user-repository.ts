@@ -61,22 +61,26 @@ export async function ensureUser(userId?: string) {
   if (userId) {
     const existing = await prisma.user.findUnique({ where: { id: userId } });
     if (existing) {
+      await ensureDefaultRatings(existing.id);
       return existing;
     }
   }
 
   const existingGuest = await prisma.user.findUnique({ where: { username: DEFAULT_USERNAME } });
   if (existingGuest) {
+    await ensureDefaultRatings(existingGuest.id);
     return existingGuest;
   }
 
-  return prisma.user.create({
+  const guest = await prisma.user.create({
     data: {
       id: DEFAULT_USER_ID,
       username: DEFAULT_USERNAME,
       displayName: "Guest Runner",
     },
   });
+  await ensureDefaultRatings(guest.id);
+  return guest;
 }
 
 export async function getUserById(userId: string) {

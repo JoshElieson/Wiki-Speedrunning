@@ -13,6 +13,7 @@ export interface RoutePathNode {
   articleUrl?: string;
   wikipediaPageId?: number;
   elapsedMs: number;
+  visitedAtIso?: string;
 }
 
 /**
@@ -33,6 +34,7 @@ export interface RunStepDetail {
   normalizedArticleTitle: string;
   elapsedMs: number;
   articleUrl?: string;
+  visitedAtIso?: string;
   kind: RunStepKind;
 }
 
@@ -42,6 +44,7 @@ export interface SaveRunStepInput {
   normalizedArticleTitle?: string;
   elapsedMs: number;
   articleUrl?: string;
+  visitedAtIso?: string;
   kind?: RunStepKind;
 }
 
@@ -54,6 +57,7 @@ export interface LegacyRunTransitionStep {
 export interface SaveRunRequest {
   userId?: string | null;
   challengeId: string;
+  wikiMode?: import("@/lib/wiki-modes").WikiModeId;
   completed: boolean;
   finalElapsedMs: number;
   clickCount: number;

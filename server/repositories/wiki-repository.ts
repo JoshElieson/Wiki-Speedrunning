@@ -1,14 +1,17 @@
 import { prisma } from "@/lib/prisma";
-import { fetchArticleByTitle } from "@/server/services/wiki/wikipedia-service";
+import { type WikiModeId } from "@/lib/wiki-modes";
+import { fetchArticleByTitleForWiki } from "@/server/services/wiki/wiki-provider";
 
-export async function ensureArticleRecord(rawTitle: string) {
-  const article = await fetchArticleByTitle(rawTitle);
+export async function ensureArticleRecord(rawTitle: string, wikiId: WikiModeId = "wikipedia") {
+  const article = await fetchArticleByTitleForWiki(wikiId, rawTitle);
+  const namespacedNormalizedTitle =
+    wikiId === "wikipedia" ? article.normalizedTitle : `${wikiId}:${article.normalizedTitle}`;
 
   return prisma.article.upsert({
-    where: { normalizedTitle: article.normalizedTitle },
+    where: { normalizedTitle: namespacedNormalizedTitle },
     create: {
       title: article.title,
-      normalizedTitle: article.normalizedTitle,
+      normalizedTitle: namespacedNormalizedTitle,
       wikipediaPageId: article.pageId ?? null,
       url: article.url,
       summary: article.extract,

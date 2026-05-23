@@ -8,6 +8,7 @@ import { ensureArticleRecord } from "./wiki-repository";
 interface SaveRunInput {
   challengeId: string;
   userId: string;
+  wikiMode: string;
   status: "COMPLETED" | "ABANDONED" | "DISQUALIFIED";
   durationMs: number;
   clickCount: number;
@@ -36,6 +37,7 @@ function isRoutePathNode(value: unknown): value is RoutePathNode {
     typeof candidate.elapsedMs === "number" &&
     Number.isInteger(candidate.elapsedMs) &&
     candidate.elapsedMs >= 0 &&
+    (candidate.visitedAtIso === undefined || typeof candidate.visitedAtIso === "string") &&
     (candidate.articleUrl === undefined || typeof candidate.articleUrl === "string") &&
     (candidate.wikipediaPageId === undefined || (typeof candidate.wikipediaPageId === "number" && Number.isInteger(candidate.wikipediaPageId)))
   );
@@ -91,6 +93,7 @@ function runStepsFromTransitions(
     normalizedArticleTitle: article.normalizedTitle,
     elapsedMs: index === 0 ? 0 : ordered[index - 1].clickedAtOffsetMs,
     articleUrl: article.url,
+    visitedAtIso: undefined,
     kind: index === 0 ? "start" : status === "COMPLETED" && index === routeNodes.length - 1 ? "target" : "intermediate",
   }));
 }
@@ -102,6 +105,7 @@ function runStepsFromRoutePath(routePath: RoutePathData, status: RunDetail["stat
     normalizedArticleTitle: node.normalizedArticleTitle,
     elapsedMs: node.elapsedMs,
     articleUrl: node.articleUrl,
+    visitedAtIso: node.visitedAtIso,
     kind: index === 0 ? "start" : status === "COMPLETED" && index === routePath.nodes.length - 1 ? "target" : "intermediate",
   }));
 }
@@ -122,6 +126,7 @@ function buildRoutePathData(input: SaveRunInput, articleRecordMap: Map<string, A
         articleUrl: articleRecord.url,
         wikipediaPageId: articleRecord.wikipediaPageId ?? undefined,
         elapsedMs: step.elapsedMs,
+        visitedAtIso: step.visitedAtIso ?? new Date(input.startedAt.getTime() + step.elapsedMs).toISOString(),
       };
     }),
   };
@@ -159,6 +164,7 @@ function toRunDetail(run: NonNullable<RunWithRelations>): RunDetail {
         normalizedArticleTitle: step.normalizedArticleTitle,
         articleUrl: step.articleUrl,
         elapsedMs: step.elapsedMs,
+        visitedAtIso: step.visitedAtIso,
       })),
     };
   const steps = runStepsFromRoutePath(routePath, run.status);
@@ -220,6 +226,7 @@ export async function saveRun(input: SaveRunInput): Promise<RunDetail> {
     data: {
       userId: input.userId,
       challengeId: input.challengeId,
+      wikiMode: input.wikiMode,
       status: input.status,
       durationMs: input.durationMs,
       clickCount: input.clickCount,

@@ -13,6 +13,7 @@ import { EditableDisplayName, isOwnProfile } from "@/components/profile/profile-
 import type { ProfileSnapshot } from "@/types/domain";
 import { formatDuration } from "@/utils/format";
 import { cn } from "@/utils/cn";
+import { isEloScope } from "@/lib/mode-ratings";
 import type { ProfileVarietyScope } from "@/lib/profile-elo-categories";
 import { VarietyCategoryCard } from "@/components/profile/variety-category-card";
 
@@ -144,15 +145,31 @@ export function ProfileDetails({ username }: { username: string }) {
               <h2 className="text-lg font-semibold text-[var(--foreground)]">Variety Categories</h2>
               <p className="mt-1 text-sm text-[var(--muted)]">Per-universe ELO ratings.</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {profile.categoryElos.map((category, index) => (
-                  <VarietyCategoryCard
-                    key={category.scope}
-                    scope={category.scope as ProfileVarietyScope}
-                    name={category.label}
-                    elo={category.rating}
-                    delay={0.25 + index * 0.04}
-                  />
-                ))}
+                {profile.categoryElos.map((category, index) => {
+                  const scope = category.scope;
+                  const modeStats =
+                    isEloScope(scope) && profile.statsByMode ? profile.statsByMode[scope] : null;
+                  const runsLabel =
+                    modeStats && modeStats.completedRuns > 0
+                      ? `${modeStats.completedRuns} completed run${modeStats.completedRuns === 1 ? "" : "s"}`
+                      : undefined;
+                  const bestTimeLabel =
+                    modeStats && modeStats.bestTimeMs > 0
+                      ? `Best ${formatDuration(modeStats.bestTimeMs)}`
+                      : undefined;
+                  const subtitle = [runsLabel, bestTimeLabel].filter(Boolean).join(" · ") || undefined;
+
+                  return (
+                    <VarietyCategoryCard
+                      key={category.scope}
+                      scope={category.scope as ProfileVarietyScope}
+                      name={category.label}
+                      elo={category.rating}
+                      subtitle={subtitle}
+                      delay={0.25 + index * 0.04}
+                    />
+                  );
+                })}
               </div>
             </section>
           </motion.div>

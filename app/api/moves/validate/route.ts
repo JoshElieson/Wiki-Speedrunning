@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await validateMove(parsed.data.currentTitle, parsed.data.nextTitle, parsed.data.targetTitle);
+    const result = await validateMove(parsed.data.currentTitle, parsed.data.nextTitle, parsed.data.targetTitle, parsed.data.wikiId);
     return NextResponse.json(result);
   } catch (error) {
     const apiError = asApiError(error);

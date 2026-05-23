@@ -3,7 +3,6 @@ import { getSession } from "@/lib/session";
 import { getRecentMatchHistory, submitRun } from "@/server/services/run-service";
 import { runHistoryFiltersSchema, saveRunBodySchema } from "@/server/validation/api-schemas";
 import { NextResponse } from "next/server";
-import type { RunStepInput } from "@/types/domain";
 
 export async function POST(request: Request) {
   try {
@@ -23,32 +22,16 @@ export async function POST(request: Request) {
     }
 
     const elapsedMs = parseResult.data.finalElapsedMs ?? parseResult.data.durationMs ?? 0;
-    const transitionSteps: RunStepInput[] =
-      parseResult.data.steps.length > 0 && parseResult.data.steps.every((step) => "fromTitle" in step)
-      ? parseResult.data.steps.map((step) => ({
-          fromTitle: step.fromTitle,
-          toTitle: step.toTitle,
-          clickedAtOffsetMs: step.clickedAtOffsetMs,
-        }))
-      : parseResult.data.route.slice(1).map((toTitle, index) => {
-          const canonicalStep = parseResult.data.steps[index + 1];
-          const elapsed = canonicalStep && "elapsedMs" in canonicalStep ? canonicalStep.elapsedMs : 0;
-          return {
-            fromTitle: parseResult.data.route[index],
-            toTitle,
-            clickedAtOffsetMs: elapsed,
-          };
-        });
-
     const session = await getSession();
     const run = await submitRun({
       challengeId: parseResult.data.challengeId,
+      wikiMode: parseResult.data.wikiMode ?? parseResult.data.challengeSnapshot?.wikiId,
       userId: session?.user?.id ?? parseResult.data.userId ?? undefined,
       completed: parseResult.data.completed !== false,
       durationMs: elapsedMs,
       clickCount: parseResult.data.clickCount,
       route: parseResult.data.route,
-      steps: transitionSteps,
+      steps: parseResult.data.steps,
       challengeSnapshot: parseResult.data.challengeSnapshot,
     });
     return NextResponse.json(run, { status: 201 });

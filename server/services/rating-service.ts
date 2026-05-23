@@ -1,12 +1,12 @@
 import type { Prisma } from "@prisma/client";
 import { DEFAULT_ELO, calculateSoloEloDelta } from "@/lib/elo";
 import {
-  PROFILE_VARIETY_SCOPES,
+  ALL_ELO_SCOPES,
+  isEloScope,
+  wikiModeIdFromEloScope,
   WIKIPEDIA_ELO_SCOPE,
-} from "@/lib/profile-elo-categories";
+} from "@/lib/mode-ratings";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_RATING_SCOPES = [WIKIPEDIA_ELO_SCOPE, ...PROFILE_VARIETY_SCOPES] as const;
 
 async function recalculateRanks(scope: string) {
   const entries = await prisma.leaderboardEntry.findMany({
@@ -28,12 +28,19 @@ async function recalculateRanks(scope: string) {
   );
 }
 
-export async function refreshWikipediaLeaderboardStats(userId: string) {
+export async function refreshLeaderboardStatsForScope(userId: string, scope: string) {
   await ensureDefaultRatings(userId);
+
+  if (!isEloScope(scope)) {
+    return;
+  }
+
+  const wikiMode = wikiModeIdFromEloScope(scope);
 
   const completedStats = await prisma.run.aggregate({
     where: {
       userId,
+      wikiMode,
       status: "COMPLETED",
     },
     _count: {
@@ -47,7 +54,7 @@ export async function refreshWikipediaLeaderboardStats(userId: string) {
   await prisma.leaderboardEntry.update({
     where: {
       scope_userId: {
-        scope: WIKIPEDIA_ELO_SCOPE,
+        scope,
         userId,
       },
     },
@@ -58,13 +65,17 @@ export async function refreshWikipediaLeaderboardStats(userId: string) {
   });
 }
 
+export async function refreshWikipediaLeaderboardStats(userId: string) {
+  await refreshLeaderboardStatsForScope(userId, WIKIPEDIA_ELO_SCOPE);
+}
+
 export async function ensureDefaultRatings(userId: string) {
   const existing = await prisma.leaderboardEntry.findMany({
     where: { userId },
     select: { scope: true },
   });
   const existingScopes = new Set(existing.map((entry) => entry.scope));
-  const missingScopes = DEFAULT_RATING_SCOPES.filter((scope) => !existingScopes.has(scope));
+  const missingScopes = ALL_ELO_SCOPES.filter((scope) => !existingScopes.has(scope));
 
   if (missingScopes.length === 0) {
     return;
@@ -91,13 +102,18 @@ interface ApplyWikipediaMatchEloInput {
   runId?: string;
 }
 
-export async function applyWikipediaMatchElo({
+interface ApplySoloMatchEloInput extends ApplyWikipediaMatchEloInput {
+  scope: string;
+}
+
+export async function applySoloMatchElo({
   userId,
   completed,
   durationMs,
   clickCount,
   runId,
-}: ApplyWikipediaMatchEloInput): Promise<number> {
+  scope,
+}: ApplySoloMatchEloInput): Promise<number> {
   await ensureDefaultRatings(userId);
 
   const delta = calculateSoloEloDelta({
@@ -105,12 +121,13 @@ export async function applyWikipediaMatchElo({
     timeMs: durationMs,
     clicks: clickCount,
   });
-  const context = completed ? "wikipedia_match_completed" : "wikipedia_match_abandoned";
+  const safeScope = scope && isEloScope(scope) ? scope : WIKIPEDIA_ELO_SCOPE;
+  const context = completed ? `${safeScope}_match_completed` : `${safeScope}_match_abandoned`;
 
   const entry = await prisma.leaderboardEntry.findUnique({
     where: {
       scope_userId: {
-        scope: WIKIPEDIA_ELO_SCOPE,
+        scope: safeScope,
         userId,
       },
     },
@@ -153,7 +170,23 @@ export async function applyWikipediaMatchElo({
   }
   await prisma.$transaction(tx);
 
-  await recalculateRanks(WIKIPEDIA_ELO_SCOPE);
-
+  await recalculateRanks(safeScope);
   return appliedDelta;
+}
+
+export async function applyWikipediaMatchElo({
+  userId,
+  completed,
+  durationMs,
+  clickCount,
+  runId,
+}: ApplyWikipediaMatchEloInput): Promise<number> {
+  return applySoloMatchElo({
+    userId,
+    scope: WIKIPEDIA_ELO_SCOPE,
+    completed,
+    durationMs,
+    clickCount,
+    runId,
+  });
 }

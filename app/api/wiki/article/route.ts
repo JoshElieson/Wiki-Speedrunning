@@ -1,4 +1,5 @@
-import { fetchArticleByTitle } from "@/server/services/wiki/wikipedia-service";
+import { getWikiModeId } from "@/lib/wiki-modes";
+import { getEnabledWikiModeServerAdapter } from "@/lib/wiki-modes/server/registry";
 import { asApiError } from "@/server/errors/api-error";
 import { wikiArticleQuerySchema } from "@/server/validation/api-schemas";
 import { NextResponse } from "next/server";
@@ -7,7 +8,9 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const parseResult = wikiArticleQuerySchema.safeParse({
-      title: searchParams.get("title"),
+      title: searchParams.get("title") ?? undefined,
+      mode: searchParams.get("mode") ?? undefined,
+      wikiId: searchParams.get("wikiId") ?? undefined,
     });
 
     if (!parseResult.success) {
@@ -23,7 +26,9 @@ export async function GET(request: Request) {
       );
     }
 
-    const article = await fetchArticleByTitle(parseResult.data.title);
+    const wikiId = getWikiModeId(parseResult.data.mode ?? parseResult.data.wikiId);
+    const adapter = getEnabledWikiModeServerAdapter(wikiId);
+    const article = await adapter.fetchArticleByTitle(parseResult.data.title);
     return NextResponse.json(article);
   } catch (error) {
     const apiError = asApiError(error);

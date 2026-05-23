@@ -3,14 +3,13 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/utils/cn";
+import { getRaceTierLabel } from "@/lib/race-tier";
 import { RaceModeCard } from "./RaceModeCard";
 import { RaceTierInfo } from "./RaceTierInfo";
 import type { RaceModeSummary } from "./race-mode-types";
 
 interface RaceModeSelectionProps {
   modes: RaceModeSummary[];
-  primaryRating: number;
-  rankStatus: string;
   onSelectMode: (modeId: string) => void;
 }
 
@@ -19,13 +18,17 @@ const MODE_BUTTON_LABELS: Record<string, string> = {
   minecraft: "Minecraft",
   league: "League of Legends",
   pokemon: "Pokemon",
+  "star-wars": "Star Wars",
   starwars: "Star Wars",
   marvel: "Marvel",
 };
 
-export function RaceModeSelection({ modes, primaryRating, rankStatus, onSelectMode }: RaceModeSelectionProps) {
+export function RaceModeSelection({ modes, onSelectMode }: RaceModeSelectionProps) {
   const [selectedModeId, setSelectedModeId] = useState(modes[0]?.id ?? "wikipedia");
   const selectedMode = modes.find((mode) => mode.id === selectedModeId) ?? modes[0];
+  const selectedRating = selectedMode?.rating ?? 1000;
+  const rankStatus = getRaceTierLabel(selectedRating);
+  const selectedModeLabel = MODE_BUTTON_LABELS[selectedMode?.id ?? "wikipedia"] ?? selectedMode?.name ?? "Mode";
 
   return (
     <section className="mx-auto w-full max-w-6xl px-6 py-8 md:py-10">
@@ -37,13 +40,13 @@ export function RaceModeSelection({ modes, primaryRating, rankStatus, onSelectMo
       </header>
 
       <div className="mb-6 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-3">
-        <p className="text-xs uppercase tracking-wide text-[var(--muted)]">Main Wikipedia Rating</p>
+        <p className="text-xs uppercase tracking-wide text-[var(--muted)]">{selectedModeLabel} Rating</p>
         <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
-          <p className="text-2xl font-semibold text-[var(--foreground)]">{primaryRating} ELO</p>
-          <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--accent)]">
+          <p className="text-2xl font-semibold text-[var(--foreground)]">{selectedRating} ELO</p>
+          <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--accent)]">
             {rankStatus}
             <RaceTierInfo />
-          </p>
+          </div>
         </div>
       </div>
 
