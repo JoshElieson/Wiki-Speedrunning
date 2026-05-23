@@ -12,6 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
+    "prisma:clear-dummies": "node scripts/clear-dummy-users.mjs",
     "prisma:studio": "prisma studio",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down"

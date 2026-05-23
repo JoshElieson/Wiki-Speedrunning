@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { RaceActions, RaceState, RouteNode } from "../types/race-state";
-import { normalizeWikiTitle, toWikiTitleKey } from "@/features/wiki/services/title-normalization";
+import { normalizeWikiTitle, raceTargetTitleMatches } from "@/features/wiki/services/title-normalization";
 
 const initialState: RaceState = {
   status: "idle",
@@ -65,7 +65,7 @@ export const useRaceStore = create<RaceState & RaceActions>((set, get) => ({
       elapsedMs,
     });
 
-    if (state.targetArticle && toWikiTitleKey(state.targetArticle.normalizedTitle) === toWikiTitleKey(articleNormalized)) {
+    if (state.targetArticle && raceTargetTitleMatches(articleTitle, state.targetArticle.title, articleNormalized)) {
       get().completeRace();
     }
   },

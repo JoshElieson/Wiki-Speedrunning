@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 interface RaceTimerControls {
   elapsedMs: number;
   isRunning: boolean;
+  getElapsedMs: () => number;
   start: () => void;
   stop: () => void;
   reset: () => void;
@@ -60,14 +61,23 @@ export function useRaceTimer(initialElapsedMs = 0): RaceTimerControls {
     setIsRunning(false);
   }, []);
 
+  const getElapsedMs = useCallback(() => {
+    if (!isRunning || startedAtRef.current === null) {
+      return carryOverRef.current;
+    }
+
+    return Math.max(carryOverRef.current + (Date.now() - startedAtRef.current), 0);
+  }, [isRunning]);
+
   return useMemo(
     () => ({
       elapsedMs,
       isRunning,
+      getElapsedMs,
       start,
       stop,
       reset,
     }),
-    [elapsedMs, isRunning, reset, start, stop],
+    [elapsedMs, getElapsedMs, isRunning, reset, start, stop],
   );
 }

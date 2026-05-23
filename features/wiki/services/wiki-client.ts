@@ -1,6 +1,6 @@
 import type { WikiArticle } from "@/types/domain";
 import { parseJsonOrThrow } from "@/lib/parse-json-response";
-import { normalizeWikiTitle, toWikiTitleKey } from "./title-normalization";
+import { normalizeWikiTitle, raceTargetTitleMatches, toWikiTitleKey } from "./title-normalization";
 
 export async function fetchArticle(title: string): Promise<WikiArticle> {
   const response = await fetch(`/api/wiki/article?title=${encodeURIComponent(title)}`);
@@ -13,6 +13,14 @@ export function normalizeTitle(title: string): string {
 
 export function titleEquals(left: string, right: string): boolean {
   return toWikiTitleKey(normalizeWikiTitle(left)) === toWikiTitleKey(normalizeWikiTitle(right));
+}
+
+export function reachedRaceTarget(
+  visitedTitle: string,
+  targetTitle: string,
+  canonicalTitle?: string | null,
+): boolean {
+  return raceTargetTitleMatches(visitedTitle, targetTitle, canonicalTitle);
 }
 
 export function extractInternalArticleTitle(href: string): string | null {

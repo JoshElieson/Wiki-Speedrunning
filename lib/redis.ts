@@ -24,19 +24,41 @@ if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) 
   });
 }
 
+function deserializeCachedValue<T>(value: unknown): T | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    if (value === "[object Object]") {
+      console.warn("[redis] Ignoring corrupted cache entry stored as [object Object].");
+      return null;
+    }
+
+    try {
+      return JSON.parse(value) as T;
+    } catch (error) {
+      console.warn("[redis] Failed to deserialize cached value.", error);
+      return null;
+    }
+  }
+
+  return value as T;
+}
+
 export async function cacheGet<T>(key: string): Promise<T | null> {
   if (redisClient) {
     const value = await redisClient.get(key);
-    return value ? (JSON.parse(value) as T) : null;
+    return value ? deserializeCachedValue<T>(value) : null;
   }
 
   if (upstashClient) {
-    const value = await upstashClient.get<string>(key);
-    return value ? (JSON.parse(value) as T) : null;
+    const value = await upstashClient.get(key);
+    return value != null ? deserializeCachedValue<T>(value) : null;
   }
 
   const value = memoryCache.get(key);
-  return value ? (JSON.parse(value) as T) : null;
+  return value ? deserializeCachedValue<T>(value) : null;
 }
 
 export async function cacheSet(key: string, value: unknown, ttlSeconds = 300): Promise<void> {

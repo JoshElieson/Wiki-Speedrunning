@@ -1,6 +1,6 @@
 import { ApiError } from "@/server/errors/api-error";
 import type { RunStepInput } from "@/types/domain";
-import { normalizeWikiTitle, toWikiTitleKey } from "@/server/services/wiki/title-normalization";
+import { normalizeWikiTitle, raceTargetTitleMatches, toWikiTitleKey } from "@/server/services/wiki/title-normalization";
 import { isValidOutgoingLink } from "@/server/services/wiki/wikipedia-service";
 
 export interface RouteValidationInput {
@@ -20,15 +20,13 @@ export async function validateMove(currentTitle: string, nextTitle: string, targ
   const normalizedCurrentTitle = normalizeWikiTitle(currentTitle);
   const normalizedNextTitle = normalizeWikiTitle(nextTitle);
   const normalizedTargetTitle = targetTitle ? normalizeWikiTitle(targetTitle) : undefined;
-  const normalizedNextKey = toWikiTitleKey(normalizedNextTitle);
-  const normalizedTargetKey = normalizedTargetTitle ? toWikiTitleKey(normalizedTargetTitle) : undefined;
 
   if (!normalizedCurrentTitle || !normalizedNextTitle) {
     throw new ApiError(400, "INVALID_MOVE", "Current and next article titles are required");
   }
 
   const isValid = await isValidOutgoingLink(normalizedCurrentTitle, normalizedNextTitle);
-  const completed = Boolean(normalizedTargetKey && normalizedTargetKey === normalizedNextKey);
+  const completed = Boolean(targetTitle && isValid && raceTargetTitleMatches(nextTitle, targetTitle));
 
   return {
     isValid,
@@ -42,9 +40,7 @@ export async function validateMove(currentTitle: string, nextTitle: string, targ
 
 export async function validateCompletedRoute(input: RouteValidationInput): Promise<RouteValidationResult> {
   const startTitle = normalizeWikiTitle(input.challengeStartTitle);
-  const targetTitle = normalizeWikiTitle(input.challengeTargetTitle);
   const startTitleKey = toWikiTitleKey(startTitle);
-  const targetTitleKey = toWikiTitleKey(targetTitle);
   const normalizedRoute = input.route.map((title) => normalizeWikiTitle(title));
   const normalizedRouteKeys = normalizedRoute.map((title) => toWikiTitleKey(title));
 
@@ -56,7 +52,8 @@ export async function validateCompletedRoute(input: RouteValidationInput): Promi
     throw new ApiError(400, "INVALID_ROUTE_START", "Route does not start at challenge start article");
   }
 
-  if (normalizedRouteKeys[normalizedRoute.length - 1] !== targetTitleKey) {
+  const routeEndTitle = input.route[input.route.length - 1] ?? "";
+  if (!raceTargetTitleMatches(routeEndTitle, input.challengeTargetTitle)) {
     throw new ApiError(400, "INVALID_ROUTE_END", "Route does not end at challenge target article");
   }
 

@@ -1,1 +1,7 @@
-export { fetchArticle, normalizeTitle, extractInternalArticleTitle, titleEquals } from "./wiki-client";
+export {
+  fetchArticle,
+  normalizeTitle,
+  extractInternalArticleTitle,
+  reachedRaceTarget,
+  titleEquals,
+} from "./wiki-client";

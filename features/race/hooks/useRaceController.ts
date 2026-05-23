@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchRandomChallenge, submitRun, validateMove } from "../services/race-api";
 import { fetchWikiArticle } from "@/features/wiki/services/wiki-client";
 import { getRaceElapsedMs, useRaceStore } from "../stores/use-race-store";
-import { toWikiTitleKey } from "@/features/wiki/services/title-normalization";
+import { raceTargetTitleMatches, toWikiTitleKey } from "@/features/wiki/services/title-normalization";
 import type { RunSubmissionRequest } from "@/server/types/api";
 import type { RunDetail } from "@/server/types/run-history";
 
@@ -60,19 +60,39 @@ export function useRaceController() {
   }, [articleQuery.error, raceStatus, setRaceError]);
 
   useEffect(() => {
+    if (raceStatus !== "active" || !race.targetArticle || !articleQuery.data) {
+      return;
+    }
+
+    const visitedTitle = race.currentArticle?.title ?? "";
+    if (!raceTargetTitleMatches(visitedTitle, race.targetArticle.title, articleQuery.data.title)) {
+      return;
+    }
+
+    race.completeRace();
+  }, [articleQuery.data, race, raceStatus]);
+
+  useEffect(() => {
     if (race.status !== "completed" || !race.challenge || submittedRunRef.current) {
       return;
     }
 
+    const alignedRoute =
+      race.route.length > 0
+        ? race.route.map((node, index) =>
+            index === race.route.length - 1 ? race.challenge!.targetTitle : node.title,
+          )
+        : [race.challenge.startTitle, race.challenge.targetTitle];
+
     const payload: RunSubmissionRequest = {
       challengeId: race.challenge.id,
-      durationMs: getRaceElapsedMs(race),
+      durationMs: Math.max(getRaceElapsedMs(race), 1),
       clickCount: race.clickCount,
-      route: race.route.map((node) => node.title),
-      steps: race.route.slice(1).map((node, index) => ({
-        fromTitle: race.route[index].title,
-        toTitle: node.title,
-        clickedAtOffsetMs: node.visitedAtOffsetMs,
+      route: alignedRoute,
+      steps: alignedRoute.slice(1).map((toTitle, index) => ({
+        fromTitle: alignedRoute[index],
+        toTitle,
+        clickedAtOffsetMs: race.route[index + 1]?.visitedAtOffsetMs ?? getRaceElapsedMs(race),
       })),
       challengeSnapshot: {
         label: race.challenge.label,

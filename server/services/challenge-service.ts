@@ -472,7 +472,18 @@ export async function getDailyChallenges(date = new Date()): Promise<DailyChalle
     return dailySet;
   }
 
-  const persisted = await getDailyChallengeByDateKey(dateKey);
+  let persisted: ChallengeDescriptor | null = null;
+  if (isDatabaseConfigured()) {
+    try {
+      persisted = await getDailyChallengeByDateKey(dateKey);
+    } catch (error) {
+      if (!isPrismaConfigError(error) && process.env.NODE_ENV === "production") {
+        throw error;
+      }
+
+      console.warn("[challenge-service] Database unavailable for daily challenge lookup; using generated challenges.", error);
+    }
+  }
   if (persisted) {
     const generatedClicks = buildDailyChallengeEntry(dateKey, "clicks", `${persisted.startTitle}::${persisted.targetTitle}`);
     const dailySet: DailyChallengeSet = {

@@ -161,6 +161,11 @@ async function main() {
     });
   }
 
+  if (process.env.SEED_DUMMY_PLAYERS !== "true") {
+    console.log("Skipping dummy leaderboard players (set SEED_DUMMY_PLAYERS=true to include them).");
+    return;
+  }
+
   const players = buildSeedPlayers();
   const ranksByScope = buildRanksByScope(players);
 

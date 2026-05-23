@@ -5,9 +5,9 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { fetchArticle, normalizeTitle, titleEquals } from "@/features/wiki/services/wikiApi";
-import { formatDuration } from "@/utils/format";
+import { fetchArticle, normalizeTitle, reachedRaceTarget, titleEquals } from "@/features/wiki/services/wikiApi";
 import { RaceHud } from "./RaceHud";
+import { CompletionModal } from "./CompletionModal";
 import { WikipediaArticleView } from "./WikipediaArticleView";
 import { useRaceTimer } from "../hooks/useRaceTimer";
 import { fetchRandomChallenge, submitRun } from "../services/race-api";
@@ -66,7 +66,7 @@ function buildFallbackChallenge(startTitle: string, targetTitle: string): Challe
 export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunnerProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { elapsedMs, start: startTimer, stop: stopTimer, reset: resetTimer } = useRaceTimer();
+  const { elapsedMs, getElapsedMs, start: startTimer, stop: stopTimer, reset: resetTimer } = useRaceTimer();
   const runSubmittedRef = useRef(false);
   const raceInitKeyRef = useRef<string | null>(null);
   const isLeavingRaceRef = useRef(false);
@@ -83,6 +83,8 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
   const [lastError, setLastError] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<ChallengeDescriptor | null>(null);
   const [savedRun, setSavedRun] = useState<RunDetail | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [finalElapsedMs, setFinalElapsedMs] = useState(0);
   const [countdownValue, setCountdownValue] = useState<number | "GO" | null>(null);
 
   const randomChallengeQuery = useQuery({
@@ -124,6 +126,70 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
   const runSubmissionMutation = useMutation({
     mutationFn: (payload: RunSubmissionRequest) => submitRun(payload),
   });
+
+  const buildRunSubmissionPayload = useCallback(
+    (durationMs: number): RunSubmissionRequest | null => {
+      if (!challenge) {
+        return null;
+      }
+
+      const alignedRoute =
+        route.length > 0
+          ? route.map((step, index) => (index === route.length - 1 ? challenge.targetTitle : step.title))
+          : [challenge.startTitle, challenge.targetTitle];
+
+      return {
+        challengeId: challenge.id,
+        completed: true,
+        durationMs,
+        clickCount,
+        route: alignedRoute,
+        steps: alignedRoute.slice(1).map((toTitle, index) => ({
+          fromTitle: alignedRoute[index],
+          toTitle,
+          clickedAtOffsetMs: route[index + 1]?.visitedAtOffsetMs ?? durationMs,
+        })),
+        challengeSnapshot: {
+          label: challenge.label,
+          startTitle,
+          targetTitle: challenge.targetTitle,
+          difficultyScore: challenge.difficultyScore,
+        },
+      };
+    },
+    [challenge, clickCount, route, startTitle],
+  );
+
+  const completeRace = useCallback(() => {
+    if (runSubmittedRef.current || status !== "active" || !challenge) {
+      return;
+    }
+
+    runSubmittedRef.current = true;
+    const durationMs = Math.max(getElapsedMs(), 1);
+    stopTimer();
+    setFinalElapsedMs(durationMs);
+    setStatus("completed");
+    setSubmitError(null);
+
+    const payload = buildRunSubmissionPayload(durationMs);
+    if (!payload) {
+      setSubmitError("Unable to build run submission.");
+      runSubmittedRef.current = false;
+      return;
+    }
+
+    runSubmissionMutation.mutate(payload, {
+      onSuccess: (persistedRun) => {
+        setSavedRun(persistedRun);
+        setSubmitError(null);
+      },
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : "Run finished, but saving failed.";
+        setSubmitError(message);
+      },
+    });
+  }, [buildRunSubmissionPayload, challenge, getElapsedMs, runSubmissionMutation, status, stopTimer]);
 
   const isArticleLoading = articleQuery.isPending || articleQuery.isFetching;
   const isInteractionBlocked = isArticleLoading || status !== "active";
@@ -285,50 +351,17 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
   }, [startTimer, status]);
 
   useEffect(() => {
-    if (status !== "active") {
+    if (status !== "active" || !challenge) {
       return;
     }
 
-    if (!titleEquals(currentTitle, targetTitle)) {
+    const canonicalTitle = articleQuery.data?.title ?? articleQuery.data?.normalizedTitle ?? null;
+    if (!reachedRaceTarget(currentTitle, challenge.targetTitle, canonicalTitle)) {
       return;
     }
 
-    if (runSubmittedRef.current || !challenge) {
-      return;
-    }
-
-    runSubmittedRef.current = true;
-    stopTimer();
-    setStatus("completed");
-
-    const payload: RunSubmissionRequest = {
-      challengeId: challenge.id,
-      completed: true,
-      durationMs: elapsedMs,
-      clickCount,
-      route: route.map((step) => step.title),
-      steps: route.slice(1).map((step, index) => ({
-        fromTitle: route[index].title,
-        toTitle: step.title,
-        clickedAtOffsetMs: step.visitedAtOffsetMs,
-      })),
-      challengeSnapshot: {
-        label: challenge.label,
-        startTitle,
-        targetTitle,
-        difficultyScore: challenge.difficultyScore,
-      },
-    };
-
-    runSubmissionMutation.mutate(payload, {
-      onSuccess: (persistedRun) => {
-        setSavedRun(persistedRun);
-      },
-      onError: () => {
-        setLastError("Run finished, but saving failed. You can retry from the race page.");
-      },
-    });
-  }, [challenge, clickCount, currentTitle, elapsedMs, route, runSubmissionMutation, startTitle, status, stopTimer, targetTitle]);
+    completeRace();
+  }, [articleQuery.data, challenge, completeRace, currentTitle, status]);
 
   const handleAbandon = useCallback(() => {
     if (status !== "active" || isLeavingRaceRef.current) {
@@ -472,33 +505,53 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
         </div>
       ) : null}
 
-      {status === "completed" || status === "abandoned" ? (
+      {status === "abandoned" ? (
         <div className="w-full px-2 sm:px-3">
           <Card className="mt-4 border-[#a2a9b1] bg-[#f8f9fa] p-4 text-sm text-[#202122]">
-            <p className="font-medium">
-              {status === "completed" ? "Run complete." : "Run abandoned."}{" "}
-              {runSubmissionMutation.isPending
-                ? "Saving your result..."
-                : runSubmissionMutation.isError
-                  ? "We could not save this run."
-                  : "Your run has been recorded."}
-            </p>
-            <p className="mt-1 text-xs text-[#54595d]">
-              Time: {formatDuration(elapsedMs)} | Clicks: {clickCount} | ELO:{" "}
-              {savedRun ? `${savedRun.eloDelta > 0 ? "+" : ""}${savedRun.eloDelta}` : runSubmissionMutation.isPending ? "calculating..." : "unavailable"}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {savedRun ? (
-                <Button size="sm" onClick={() => router.push(`/runs/${savedRun.id}`)}>
-                  View Route Path
-                </Button>
-              ) : null}
-              <Button size="sm" variant="outline" onClick={returnToSelection}>
-                Back to Race Modes
-              </Button>
-            </div>
+            <p className="font-medium">Run abandoned.</p>
+            <Button size="sm" variant="outline" className="mt-3" onClick={returnToSelection}>
+              Back to Race Modes
+            </Button>
           </Card>
         </div>
+      ) : null}
+
+      {challenge ? (
+        <CompletionModal
+          open={status === "completed"}
+          challenge={challenge}
+          elapsedMs={finalElapsedMs || elapsedMs}
+          clickCount={clickCount}
+          submittedRun={savedRun ?? undefined}
+          isSubmitting={runSubmissionMutation.isPending}
+          submitError={submitError}
+          onReplay={() => {
+            runSubmittedRef.current = false;
+            raceInitKeyRef.current = null;
+            setSavedRun(null);
+            setSubmitError(null);
+            setFinalElapsedMs(0);
+            resetTimer();
+            setCountdownValue(null);
+            setStatus("loading");
+          }}
+          onNewChallenge={() => {
+            runSubmittedRef.current = false;
+            raceInitKeyRef.current = null;
+            setSavedRun(null);
+            setSubmitError(null);
+            setFinalElapsedMs(0);
+            resetTimer();
+            setCountdownValue(null);
+            if (!startFromUrl || !targetFromUrl) {
+              void randomChallengeQuery.refetch();
+            } else {
+              returnToSelection();
+              return;
+            }
+            setStatus("loading");
+          }}
+        />
       ) : null}
     </section>
   );

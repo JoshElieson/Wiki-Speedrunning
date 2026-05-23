@@ -42,6 +42,23 @@ export function stripWikiDisambiguation(title: string): string {
   return stripped || title;
 }
 
+export function raceTargetTitleMatches(
+  visitedTitle: string,
+  targetTitle: string,
+  canonicalTitle?: string | null,
+): boolean {
+  const targetKey = toWikiTitleKey(targetTitle);
+  const candidates = [visitedTitle, canonicalTitle].filter((value): value is string => Boolean(value?.trim()));
+
+  return candidates.some((title) => {
+    if (toWikiTitleKey(title) === targetKey) {
+      return true;
+    }
+
+    return toWikiTitleKey(stripWikiDisambiguation(title)) === toWikiTitleKey(stripWikiDisambiguation(targetTitle));
+  });
+}
+
 export function isLikelyArticleTitle(rawTitle: string): boolean {
   const title = normalizeWikiTitle(rawTitle);
   if (!title) {

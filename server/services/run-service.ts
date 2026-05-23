@@ -276,26 +276,31 @@ export async function submitRun(payload: RunSubmissionRequest): Promise<RunDetai
   const completed = payload.completed !== false;
   const saveRequest = fromLegacyPayload(payload);
 
-  if (completed && challengeStartTitle && challengeTargetTitle) {
-    await validateCompletedRoute({
-      challengeStartTitle,
-      challengeTargetTitle,
-      route: payload.route,
-      steps: payload.steps,
-    });
-  }
-
   try {
+    if (completed && challengeStartTitle && challengeTargetTitle) {
+      await validateCompletedRoute({
+        challengeStartTitle,
+        challengeTargetTitle,
+        route: payload.route,
+        steps: payload.steps,
+      });
+    }
+
     const response = completed ? await saveCompletedRun(saveRequest) : await saveAbandonedRun(saveRequest);
     return response.run;
-  } catch {
+  } catch (error) {
     if (!challengeStartTitle || !challengeTargetTitle) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
       throw new ApiError(
         400,
         "CHALLENGE_CONTEXT_REQUIRED",
         "challengeSnapshot.startTitle and challengeSnapshot.targetTitle are required for non-persisted challenges",
       );
     }
+
     return makeInMemoryRun(payload);
   }
 }
