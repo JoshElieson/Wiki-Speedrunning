@@ -457,9 +457,9 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
       return;
     }
 
+    isLeavingRaceRef.current = true;
     runSubmittedRef.current = true;
     stopTimer();
-    setStatus("abandoned");
 
     if (challenge) {
       const payload: RunSubmissionRequest = {
@@ -481,18 +481,9 @@ export function WikipediaRaceRunner({ onReturnToSelection }: WikipediaRaceRunner
         },
       };
 
-      runSubmissionMutation.mutate(payload, {
-        onSuccess: (persistedRun) => {
-          setSavedRun(persistedRun);
-        },
-        onError: () => {
-          setLastError("Run abandoned, but saving failed. You can return to race modes and try again.");
-        },
-        onSettled: () => {
-          returnToSelection();
-        },
+      void runSubmissionMutation.mutateAsync(payload).catch(() => {
+        // Persistence is best-effort; navigation must not wait on the API.
       });
-      return;
     }
 
     returnToSelection();
