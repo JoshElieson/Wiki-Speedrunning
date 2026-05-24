@@ -668,7 +668,7 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
   return (
     <section
       ref={runSectionRef}
-      className={`relative min-h-[calc(100vh-4rem)] pb-8 ${readerShellBackgroundClass}`}
+      className={`relative flex h-[100dvh] flex-col overflow-hidden ${readerShellBackgroundClass}`}
     >
       {isRaceActive ? (
         <RaceHud
@@ -681,7 +681,7 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
         />
       ) : null}
 
-      <div className="w-full">
+      <div className="flex min-h-0 w-full flex-1 flex-col">
         <WikipediaArticleView
           wikiMode={modeId}
           title={articleQuery.data?.title ?? currentTitle}

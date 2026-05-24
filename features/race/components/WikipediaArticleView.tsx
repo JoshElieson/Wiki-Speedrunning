@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { extractInternalArticleTitle } from "@/features/wiki/services/wikiApi";
 import { getWikiMode, resolveWikiModeId, type WikiModeId } from "@/lib/wiki-modes";
 
@@ -28,7 +28,6 @@ export function WikipediaArticleView({
   onInternalLinkClick,
 }: WikipediaArticleViewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [iframeHeight, setIframeHeight] = useState<number>(900);
   const resolvedMode = resolveWikiModeId(wikiMode);
   const wikiConfig = getWikiMode(resolvedMode);
   const isMarvelMode = resolvedMode === "marvel";
@@ -1106,12 +1105,18 @@ export function WikipediaArticleView({
         margin: 0;
         padding: 0;
         background: #fff;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        height: 100%;
       }
       body {
         margin: 0;
         background: #fff;
         color: #202122;
         font-family: sans-serif;
+        overflow-x: hidden !important;
+        overflow-y: visible !important;
+        min-height: 100%;
       }
       .page-layout {
         display: flex;
@@ -1214,6 +1219,14 @@ export function WikipediaArticleView({
       .mw-body-content {
         font-size: 0.875rem;
         line-height: 1.6;
+      }
+      .mw-body,
+      .mw-page-container,
+      .mw-body-content,
+      #content,
+      .vector-body,
+      .skin-vector-legacy .mw-page-container {
+        overflow: visible !important;
       }
       .mw-body-content img {
         max-width: 100%;
@@ -1636,7 +1649,6 @@ export function WikipediaArticleView({
               const isClosed = group.classList.contains("pi-collapse-closed");
               group.classList.toggle("pi-collapse-closed", !isClosed);
               group.classList.toggle("pi-collapse-open", isClosed);
-              postHeight();
             });
           });
         };
@@ -1668,7 +1680,6 @@ export function WikipediaArticleView({
             const setCollapsed = (collapsed) => {
               element.classList.toggle("mw-collapsed", collapsed);
               toggle.textContent = collapsed ? "[" + expandText + "]" : "[" + collapseText + "]";
-              postHeight();
             };
 
             toggle.addEventListener("click", (event) => {
@@ -1734,7 +1745,6 @@ export function WikipediaArticleView({
             const setCollapsed = (collapsed) => {
               element.classList.toggle("collapsed", collapsed);
               link.textContent = collapsed ? expandText : collapseText;
-              postHeight();
             };
 
             link.textContent = element.classList.contains("collapsed") ? expandText : collapseText;
@@ -1773,14 +1783,6 @@ export function WikipediaArticleView({
             tocToggle.textContent = isCollapsed ? "hide" : "show";
           });
         }
-
-        const postHeight = () => {
-          const height = Math.max(
-            document.body.scrollHeight,
-            document.documentElement.scrollHeight
-          );
-          parent.postMessage({ source: "wikirush-wiki-frame", type: "height", height }, "*");
-        };
 
         const postLink = (href) => {
           parent.postMessage({ source: "wikirush-wiki-frame", type: "link", href }, "*");
@@ -2039,13 +2041,7 @@ export function WikipediaArticleView({
 
         window.addEventListener("load", () => {
           hydrateLazyImages();
-          postHeight();
         });
-        window.addEventListener("resize", postHeight);
-        if (typeof ResizeObserver !== "undefined") {
-          const observer = new ResizeObserver(postHeight);
-          observer.observe(document.body);
-        }
         initSiteCollapsibles();
         hydrateLazyImages();
         ${isFandomMode ? `
@@ -2095,7 +2091,6 @@ export function WikipediaArticleView({
           chromeObserver.observe(document.body, { childList: true, subtree: true });
         }
         ` : ""}
-        postHeight();
       })();
     </script>
   </body>
@@ -2130,17 +2125,6 @@ export function WikipediaArticleView({
         return;
       }
 
-      if (
-        payload.type === "height" &&
-        typeof payload.height === "number" &&
-        Number.isFinite(payload.height)
-      ) {
-        setIframeHeight(
-          Math.min(Math.max(Math.ceil(payload.height), 500), 4000),
-        );
-        return;
-      }
-
       if (payload.type === "link" && typeof payload.href === "string") {
         if (disableInteraction) {
           return;
@@ -2152,6 +2136,7 @@ export function WikipediaArticleView({
         }
 
         onInternalLinkClick(nextTitle);
+        iframeRef.current?.contentWindow?.scrollTo({ top: 0, left: 0 });
         return;
       }
 
@@ -2169,9 +2154,18 @@ export function WikipediaArticleView({
     return () => window.removeEventListener("message", onMessage);
   }, [disableInteraction, onInternalLinkClick, onLinkHover, resolvedMode]);
 
+  useEffect(() => {
+    const frameWindow = iframeRef.current?.contentWindow;
+    if (!frameWindow) {
+      return;
+    }
+
+    frameWindow.scrollTo({ top: 0, left: 0 });
+  }, [title, html]);
+
   return (
     <article
-      className={`race-wiki-shell w-full ${
+      className={`race-wiki-shell flex min-h-0 w-full flex-1 flex-col ${
         isLeagueMode
           ? "bg-[#0a0e17] text-[#c9c9c9]"
           : isPokemonMode
@@ -2197,14 +2191,16 @@ export function WikipediaArticleView({
       ) : (
         <iframe
           ref={iframeRef}
-          className="race-wiki-content block w-full border-0"
+          className="race-wiki-content min-h-0 w-full flex-1 border-0"
           srcDoc={articleDocument}
           sandbox={iframeSandbox}
+          scrolling="no"
           title={`${wikiConfig.reader.iframeTitlePrefix}: ${displayTitle || title}`}
           style={{
-            minHeight: "500px",
-            height: `${iframeHeight}px`,
             backgroundColor: readerShellBackgroundColor,
+          }}
+          onLoad={() => {
+            iframeRef.current?.contentWindow?.scrollTo({ top: 0, left: 0 });
           }}
         />
       )}
