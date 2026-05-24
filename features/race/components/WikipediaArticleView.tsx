@@ -12,6 +12,7 @@ interface WikipediaArticleViewProps {
   isLoading: boolean;
   errorMessage: string | null;
   disableInteraction?: boolean;
+  onLinkHover?: (title: string) => void;
   onInternalLinkClick: (title: string) => void;
 }
 
@@ -23,6 +24,7 @@ export function WikipediaArticleView({
   isLoading,
   errorMessage,
   disableInteraction = false,
+  onLinkHover,
   onInternalLinkClick,
 }: WikipediaArticleViewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -1784,6 +1786,10 @@ export function WikipediaArticleView({
           parent.postMessage({ source: "wikirush-wiki-frame", type: "link", href }, "*");
         };
 
+        const postPrefetch = (href) => {
+          parent.postMessage({ source: "wikirush-wiki-frame", type: "prefetch", href }, "*");
+        };
+
         const absolutizeUrl = (value) => {
           if (!value) {
             return value;
@@ -2008,6 +2014,29 @@ export function WikipediaArticleView({
           event.preventDefault();
         });
 
+        document.addEventListener("mouseover", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) {
+            return;
+          }
+
+          const link = target.closest("a[href]");
+          if (!link) {
+            return;
+          }
+
+          const href = link.getAttribute("href") || "";
+          if (!href || href.startsWith("#") || resolveFragmentLink(href, link)) {
+            return;
+          }
+
+          if (link.dataset.prefetchRequested === "true") {
+            return;
+          }
+          link.dataset.prefetchRequested = "true";
+          postPrefetch(href);
+        });
+
         window.addEventListener("load", () => {
           hydrateLazyImages();
           postHeight();
@@ -2123,12 +2152,22 @@ export function WikipediaArticleView({
         }
 
         onInternalLinkClick(nextTitle);
+        return;
+      }
+
+      if (payload.type === "prefetch" && typeof payload.href === "string" && onLinkHover) {
+        const nextTitle = extractInternalArticleTitle(payload.href, resolvedMode);
+        if (!nextTitle) {
+          return;
+        }
+
+        onLinkHover(nextTitle);
       }
     };
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [disableInteraction, onInternalLinkClick, resolvedMode]);
+  }, [disableInteraction, onInternalLinkClick, onLinkHover, resolvedMode]);
 
   return (
     <article

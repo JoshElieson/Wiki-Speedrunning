@@ -1,9 +1,6 @@
 import { BASE_DISALLOWED_PREFIXES, createBaseMediaWikiMode } from "../helpers";
 import type { WikiModeConfig } from "../types";
 
-const WIKIPEDIA_READER_STYLES =
-  "https://en.wikipedia.org/w/load.php?lang=en&modules=mediawiki.skinning.content.parsoid%7Cmediawiki.skinning.interface%7Csite.styles%7Cskins.vector.styles%7Cext.wikimediamessages.styles%7Cext.cite.styles%7Cext.math.styles&only=styles&skin=vector";
-
 export const wikipediaWikiMode: WikiModeConfig = createBaseMediaWikiMode({
   id: "wikipedia",
   displayName: "Wikipedia",
@@ -24,7 +21,6 @@ export const wikipediaWikiMode: WikiModeConfig = createBaseMediaWikiMode({
   tags: ["Ranked", "Classic"],
   ctaLabel: "Start Wikipedia Run",
   reader: {
-    styleSheetHref: WIKIPEDIA_READER_STYLES,
     articleSubtitle: "From Wikipedia, the free encyclopedia",
     iframeTitlePrefix: "Wikipedia article",
   },
@@ -33,11 +29,11 @@ export const wikipediaWikiMode: WikiModeConfig = createBaseMediaWikiMode({
   blockedTitlePrefixes: [...BASE_DISALLOWED_PREFIXES, "Wikipedia:"],
   articleApiPath: "/api/wiki/article",
   randomChallengeApiPath: "/api/challenges/random",
-  defaultStartTitle: "Mars",
-  defaultTargetTitle: "TypeScript",
+  defaultStartTitle: "Internet",
+  defaultTargetTitle: "Graph theory",
   fallbackChallengeLabel: "Custom Wikipedia race",
   randomChallengeLabel: "Random Wikipedia Sprint",
-  emergencyChallengeId: "generated-emergency-mars-typescript",
+  emergencyChallengeId: "generated-emergency-internet-graph-theory",
   runLabel: "Wikipedia Run",
   rateLimitErrorMessage: "Wikipedia is rate-limiting requests right now. Please wait a moment and try again.",
 });

@@ -17,6 +17,8 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "test:wiki-modes": "tsx --test lib/wiki-modes/wiki-modes.test.ts",
+    "test:wikipedia-challenge-titles": "tsx --test lib/wikipedia-challenge-titles.test.ts",
+    "test:guest-user": "tsx --test lib/guest-user.test.ts",
     "test:mode-ratings": "tsx --test lib/mode-ratings.test.ts"
   },
   "dependencies": {

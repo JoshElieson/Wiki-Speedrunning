@@ -63,6 +63,8 @@ export interface SaveRunChallengeSnapshot {
 }
 
 export interface SaveRunRequest {
+  /** Set server-side from the authenticated session; never trusted from the client body alone. */
+  sessionUserId?: string | null;
   userId?: string | null;
   challengeId: string;
   wikiMode?: import("@/lib/wiki-modes").WikiModeId;

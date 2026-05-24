@@ -2,6 +2,7 @@ import sanitizeHtml from "sanitize-html";
 import { REDIS_KEYS } from "@/db/constants";
 import { cache } from "@/server/cache/cache";
 import { ApiError } from "@/server/errors/api-error";
+import { isEligibleWikipediaChallengeTitle } from "@/lib/wikipedia-challenge-titles";
 import { getWikiMode, isLikelyModeArticleTitle, type WikiModeId } from "@/lib/wiki-modes";
 import { createStripDisambiguation } from "@/lib/wiki-modes/helpers";
 import { normalizeWikiTitle, toWikiTitleKey } from "./title-normalization";
@@ -677,25 +678,25 @@ export async function fetchWikiArticleByTitle(modeId: WikiModeId, rawTitle: stri
 
   const query = new URLSearchParams({
     action: "query",
-    prop: "extracts|info|links",
+    prop: "extracts|info",
     exintro: "1",
     explaintext: "1",
     inprop: "url",
-    plnamespace: "0",
-    pllimit: "max",
     redirects: "1",
     format: "json",
     origin: "*",
     titles: normalizedInputTitle,
   });
 
-  const payload = await fetchMediaWikiJson<MediaWikiQueryResponse>(modeId, query);
+  const [payload, htmlPayload] = await Promise.all([
+    fetchMediaWikiJson<MediaWikiQueryResponse>(modeId, query),
+    fetchArticleHtmlByTitle(modeId, normalizedInputTitle),
+  ]);
+
   const page = payload.query?.pages ? Object.values(payload.query.pages)[0] : undefined;
   if (!page || page.missing) {
     throw new ApiError(404, "ARTICLE_NOT_FOUND", "The page you specified doesn't exist.");
   }
-
-  const htmlPayload = await fetchArticleHtmlByTitle(modeId, normalizedInputTitle);
   const article = buildArticleFromPage(modeId, page, htmlPayload);
   const canonicalCacheKey = REDIS_KEYS.article(`${modeId}:${WIKI_RENDER_CACHE_VERSION}:${article.normalizedTitle.toLowerCase()}`);
 
@@ -732,8 +733,9 @@ export async function fetchRandomWikiArticleTitles(modeId: WikiModeId, limit: nu
   const seen = new Set<string>();
   let rncontinue: string | undefined;
   let attempts = 0;
+  const maxAttempts = modeId === "wikipedia" ? 120 : 40;
 
-  while (titles.length < boundedLimit && attempts < 40) {
+  while (titles.length < boundedLimit && attempts < maxAttempts) {
     attempts += 1;
     const remaining = boundedLimit - titles.length;
     const batchSize = Math.min(500, remaining);
@@ -759,6 +761,9 @@ export async function fetchRandomWikiArticleTitles(modeId: WikiModeId, limit: nu
       }
       const normalized = normalizeWikiTitle(page.title);
       if (!isLikelyModeArticleTitle(modeId, normalized)) {
+        continue;
+      }
+      if (modeId === "wikipedia" && !isEligibleWikipediaChallengeTitle(normalized.replace(/_/g, " "))) {
         continue;
       }
       if (modeId === "league" && normalized.toUpperCase().startsWith("UNIVERSE:")) {

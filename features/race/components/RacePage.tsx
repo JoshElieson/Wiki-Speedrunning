@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchRandomChallenge } from "@/features/race/services/race-api";
 import { useSession } from "next-auth/react";
 
 import { buildRaceModeSummaries, getWikiModeId, type WikiModeId, profileToRaceModeStats } from "@/lib/wiki-modes";
@@ -48,6 +49,7 @@ function hasRaceUrlParams(searchParams: URLSearchParams): boolean {
 
 export function RacePage({ initialProfile = null }: { initialProfile?: ProfileSnapshot | null }) {
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const { data: session, status: sessionStatus } = useSession();
   const username = session?.user?.username;
   const [view, setView] = useState<RaceTabView>("modeSelection");
@@ -95,7 +97,13 @@ export function RacePage({ initialProfile = null }: { initialProfile?: ProfileSn
         if (!selected?.enabled) {
           return;
         }
-        setActiveMode(getWikiModeId(modeId));
+        const resolvedMode = getWikiModeId(modeId);
+        void import("./WikipediaRaceRunner");
+        void queryClient.prefetchQuery({
+          queryKey: ["race", resolvedMode, "random-challenge"],
+          queryFn: () => fetchRandomChallenge(resolvedMode),
+        });
+        setActiveMode(resolvedMode);
         setView("activeRace");
       }}
     />

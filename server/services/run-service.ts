@@ -4,7 +4,7 @@ import { getWikiModeConfig, getWikiModeId } from "@/lib/wiki-modes";
 import { calculateSoloEloDelta } from "@/lib/elo";
 import { resolveChallengeForRun } from "@/server/services/challenge-service";
 import { getRecentRuns, getRunById, getRunsForChallenge, getRunsForUser, saveRun } from "@/server/repositories/run-repository";
-import { ensureUser } from "@/server/repositories/user-repository";
+import { resolveUserForRun } from "@/server/repositories/user-repository";
 import type {
   MatchHistoryFilters,
   LegacyRunTransitionStep,
@@ -156,7 +156,10 @@ export async function saveCompletedRun(payload: SaveRunRequest): Promise<SaveRun
     })),
   });
 
-  const user = await ensureUser(payload.userId ?? undefined);
+  const user = await resolveUserForRun({
+    sessionUserId: payload.sessionUserId,
+    clientUserId: payload.userId,
+  });
   const score = computeRunScore(payload.finalElapsedMs, payload.clickCount);
   const completedAt = payload.completedAt ? new Date(payload.completedAt) : new Date();
   const startedAt = payload.startedAt ? new Date(payload.startedAt) : new Date(completedAt.getTime() - payload.finalElapsedMs);
@@ -195,7 +198,10 @@ export async function saveAbandonedRun(payload: SaveRunRequest): Promise<SaveRun
   const wikiScope = getWikiModeConfig(wikiModeId).eloScope;
   const challenge = await resolvePersistedChallenge(payload);
 
-  const user = await ensureUser(payload.userId ?? undefined);
+  const user = await resolveUserForRun({
+    sessionUserId: payload.sessionUserId,
+    clientUserId: payload.userId,
+  });
   const finishedAt = payload.completedAt ? new Date(payload.completedAt) : new Date();
   const startedAt = payload.startedAt ? new Date(payload.startedAt) : new Date(finishedAt.getTime() - payload.finalElapsedMs);
 
@@ -330,12 +336,18 @@ function makeInMemoryRun(payload: RunSubmissionRequest): RunDetail {
   return localRun;
 }
 
-export async function submitRun(payload: RunSubmissionRequest): Promise<RunDetail> {
+export async function submitRun(
+  payload: RunSubmissionRequest,
+  auth?: { sessionUserId?: string | null },
+): Promise<RunDetail> {
   const challengeStartTitle = payload.challengeSnapshot?.startTitle;
   const challengeTargetTitle = payload.challengeSnapshot?.targetTitle;
   const wikiModeId = getWikiModeId(payload.wikiMode ?? payload.wikiId ?? payload.challengeSnapshot?.wikiId);
   const completed = payload.completed !== false;
-  const saveRequest = fromLegacyPayload(payload);
+  const saveRequest: SaveRunRequest = {
+    ...fromLegacyPayload(payload),
+    sessionUserId: auth?.sessionUserId,
+  };
 
   try {
     if (completed && challengeStartTitle && challengeTargetTitle) {

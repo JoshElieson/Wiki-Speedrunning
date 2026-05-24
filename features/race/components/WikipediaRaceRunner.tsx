@@ -2,11 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { getWikiMode, type WikiModeId } from "@/lib/wiki-modes";
-import { fetchArticle, normalizeTitle, reachedRaceTarget, titleEquals } from "@/features/wiki/services/wikiApi";
+import {
+  fetchArticle,
+  normalizeTitle,
+  reachedRaceTarget,
+  titleEquals,
+  wikiArticleQueryKey,
+  WIKI_ARTICLE_STALE_TIME_MS,
+} from "@/features/wiki/services/wikiApi";
 import { RaceHud } from "./RaceHud";
 import { CompletionModal } from "./CompletionModal";
 import { WikipediaArticleView } from "./WikipediaArticleView";
@@ -65,6 +73,8 @@ function buildFallbackChallenge(startTitle: string, targetTitle: string, modeId:
 
 export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRaceRunnerProps) {
   const wikiMode = getWikiMode(modeId);
+  const { data: session, status: sessionStatus } = useSession();
+  const isAuthenticated = sessionStatus === "authenticated" && Boolean(session?.user?.id);
   const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -112,10 +122,27 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
     },
   });
 
+  const prefetchArticle = useCallback(
+    (title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      void queryClient.prefetchQuery({
+        queryKey: wikiArticleQueryKey(modeId, trimmed),
+        queryFn: () => fetchArticle(trimmed, modeId),
+        staleTime: WIKI_ARTICLE_STALE_TIME_MS,
+      });
+    },
+    [modeId, queryClient],
+  );
+
   const articleQuery = useQuery({
-    queryKey: ["wiki", modeId, "article", normalizeTitle(currentTitle, modeId)],
+    queryKey: wikiArticleQueryKey(modeId, currentTitle),
     queryFn: () => fetchArticle(currentTitle, modeId),
     enabled: Boolean(currentTitle),
+    staleTime: WIKI_ARTICLE_STALE_TIME_MS,
     retry: (failureCount, error) => {
       if (isRateLimitedError(error)) {
         return failureCount < 5;
@@ -131,7 +158,7 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
   });
 
   const runSubmissionMutation = useMutation({
-    mutationFn: (payload: RunSubmissionRequest) => submitRun(payload),
+    mutationFn: (payload: RunSubmissionRequest) => submitRun(payload, { authenticated: isAuthenticated }),
   });
 
   const buildRunSubmissionPayload = useCallback(
@@ -208,7 +235,7 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
     });
   }, [buildRunSubmissionPayload, challenge, getElapsedMs, queryClient, runSubmissionMutation, status, stopTimer]);
 
-  const isArticleLoading = articleQuery.isPending || articleQuery.isFetching;
+  const isArticleLoading = articleQuery.isPending;
   const isInteractionBlocked = isArticleLoading || status !== "active";
   const isRaceActive = status === "active";
   const isPreStartOverlayVisible = status === "loading" || status === "countdown";
@@ -316,6 +343,20 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
     skipNextArticleUrlSyncRef.current = false;
     startBackGuardArmedRef.current = false;
   }, [modeId, resetTimer, startGoalPair, randomChallengeQuery.data, randomChallengeQuery.isError, wikiMode.articlePathPrefixes, wikiMode.baseUrl]);
+
+  useEffect(() => {
+    if (startFromUrl) {
+      prefetchArticle(wikiMode.parseTitleFromRaceUrl(startFromUrl));
+    }
+  }, [prefetchArticle, startFromUrl, wikiMode]);
+
+  useEffect(() => {
+    if (!randomChallengeQuery.data || (startFromUrl && targetFromUrl)) {
+      return;
+    }
+
+    prefetchArticle(wikiMode.parseTitleFromRaceUrl(randomChallengeQuery.data.startTitle));
+  }, [prefetchArticle, randomChallengeQuery.data, startFromUrl, targetFromUrl, wikiMode]);
 
   useEffect(() => {
     if (isLeavingRaceRef.current || !currentTitle || !startTitle || !targetTitle) {
@@ -649,6 +690,7 @@ export function WikipediaRaceRunner({ modeId, onReturnToSelection }: WikipediaRa
           isLoading={isArticleLoading}
           errorMessage={lastError}
           disableInteraction={isInteractionBlocked}
+          onLinkHover={prefetchArticle}
           onInternalLinkClick={(nextTitle) => {
             if (isInteractionBlocked || !nextTitle) {
               return;

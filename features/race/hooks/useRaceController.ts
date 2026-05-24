@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import { fetchRandomChallenge, submitRun, validateMove } from "../services/race-api";
 import { fetchWikiArticle } from "@/features/wiki/services/wiki-client";
 import { getRaceElapsedMs, useRaceStore } from "../stores/use-race-store";
@@ -10,6 +11,8 @@ import type { RunSubmissionRequest } from "@/server/types/api";
 import type { RunDetail } from "@/server/types/run-history";
 
 export function useRaceController() {
+  const { data: session, status: sessionStatus } = useSession();
+  const isAuthenticated = sessionStatus === "authenticated" && Boolean(session?.user?.id);
   const race = useRaceStore();
   const raceStatus = race.status;
   const setRaceError = race.setRaceError;
@@ -35,7 +38,9 @@ export function useRaceController() {
   });
 
   const moveValidationMutation = useMutation({ mutationFn: validateMove });
-  const runSubmissionMutation = useMutation<RunDetail, Error, RunSubmissionRequest>({ mutationFn: submitRun });
+  const runSubmissionMutation = useMutation<RunDetail, Error, RunSubmissionRequest>({
+    mutationFn: (payload) => submitRun(payload, { authenticated: isAuthenticated }),
+  });
 
   useEffect(() => {
     if (raceStatus !== "active") {

@@ -12,6 +12,10 @@ import {
   getRandomActiveChallenge,
   setDailyChallenge,
 } from "@/server/repositories/challenge-repository";
+import {
+  isEligibleWikipediaChallengeTitle,
+  isLikelyProperNounTitle,
+} from "@/lib/wikipedia-challenge-titles";
 import { PROFILE_VARIETY_CATEGORIES } from "@/lib/profile-elo-categories";
 import { VARIETY_DAILY_ARTICLE_POOLS } from "@/lib/variety-daily-pools";
 import type {
@@ -32,8 +36,8 @@ type ChallengeSeed = {
 
 const FALLBACK_SEEDS: ChallengeSeed[] = [
   { label: "Foundations", startTitle: "Internet", targetTitle: "Graph theory", difficultyScore: 42 },
-  { label: "Culture Shift", startTitle: "Jazz", targetTitle: "Machine learning", difficultyScore: 58 },
-  { label: "Space to Code", startTitle: "Mars", targetTitle: "TypeScript", difficultyScore: 66 },
+  { label: "Culture Shift", startTitle: "Music theory", targetTitle: "Machine learning", difficultyScore: 58 },
+  { label: "Space to Code", startTitle: "Space exploration", targetTitle: "Programming language", difficultyScore: 66 },
   { label: "Policy Sprint", startTitle: "Democracy", targetTitle: "Cryptography", difficultyScore: 71 },
   { label: "Deep Dive", startTitle: "Quantum mechanics", targetTitle: "Compiler", difficultyScore: 82 },
 ];
@@ -42,17 +46,14 @@ const DAILY_ARTICLE_POOL = [
   "Internet",
   "Graph theory",
   "Machine learning",
-  "Jazz",
   "Combinatorics",
   "Evolution",
   "Cryptography",
   "Programming language",
   "Data structure",
   "Probability",
-  "World War II",
   "Renewable energy",
   "Computer network",
-  "Moon",
   "Climate change",
   "Neural network",
   "Rocket",
@@ -76,7 +77,6 @@ const DAILY_ARTICLE_POOL = [
   "Set theory",
   "Complex system",
   "Computer science",
-  "World Wide Web",
   "Metallurgy",
   "Philosophy of science",
 ];
@@ -132,7 +132,15 @@ function pickFallbackGeneratedChallenge(): ChallengeDescriptor {
 }
 
 function getGeneratedPoolCacheKey(wikiId: WikiModeId): string {
-  return `challenge:generated:${wikiId}-articles:v1`;
+  return `challenge:generated:${wikiId}-articles:v2`;
+}
+
+function filterChallengePoolForWiki(wikiId: WikiModeId, titles: string[]): string[] {
+  if (wikiId !== "wikipedia") {
+    return titles;
+  }
+
+  return titles.filter((title) => isEligibleWikipediaChallengeTitle(title));
 }
 
 function uniqueFallbackTitlesForWiki(wikiId: WikiModeId): string[] {
@@ -172,7 +180,10 @@ async function getGeneratedArticlePool(wikiId: WikiModeId): Promise<string[]> {
 
   try {
     const randomTitles = await fetchRandomArticleTitlesForWiki(wikiId, GENERATED_POOL_SIZE);
-    const combined = Array.from(new Set([...randomTitles, ...uniqueFallbackTitlesForWiki(wikiId)]));
+    const combined = filterChallengePoolForWiki(
+      wikiId,
+      Array.from(new Set([...randomTitles, ...uniqueFallbackTitlesForWiki(wikiId)])),
+    );
     await cache.set(cacheKey, combined, GENERATED_POOL_TTL_SECONDS);
     return combined;
   } catch (error) {
@@ -268,8 +279,12 @@ function pickDailyPairFromPool(
   return { startTitle, targetTitle };
 }
 
+function getWikipediaDailyArticlePool(): string[] {
+  return DAILY_ARTICLE_POOL.filter((title) => !isLikelyProperNounTitle(title));
+}
+
 function pickDailyPair(dateKey: string, mode: DailyChallengeMode, excludedPair?: string): { startTitle: string; targetTitle: string } {
-  return pickDailyPairFromPool(dateKey, mode, DAILY_ARTICLE_POOL, excludedPair);
+  return pickDailyPairFromPool(dateKey, mode, getWikipediaDailyArticlePool(), excludedPair);
 }
 
 function buildDailyChallengeEntry(dateKey: string, mode: DailyChallengeMode, excludedPair?: string): DailyChallengeEntry {

@@ -23,17 +23,20 @@ export async function POST(request: Request) {
 
     const elapsedMs = parseResult.data.finalElapsedMs ?? parseResult.data.durationMs ?? 0;
     const session = await getSession();
-    const run = await submitRun({
-      challengeId: parseResult.data.challengeId,
-      wikiMode: parseResult.data.wikiMode ?? parseResult.data.challengeSnapshot?.wikiId,
-      userId: session?.user?.id ?? parseResult.data.userId ?? undefined,
-      completed: parseResult.data.completed !== false,
-      durationMs: elapsedMs,
-      clickCount: parseResult.data.clickCount,
-      route: parseResult.data.route,
-      steps: parseResult.data.steps,
-      challengeSnapshot: parseResult.data.challengeSnapshot,
-    });
+    const run = await submitRun(
+      {
+        challengeId: parseResult.data.challengeId,
+        wikiMode: parseResult.data.wikiMode ?? parseResult.data.challengeSnapshot?.wikiId,
+        userId: session?.user?.id ? undefined : (parseResult.data.userId ?? undefined),
+        completed: parseResult.data.completed !== false,
+        durationMs: elapsedMs,
+        clickCount: parseResult.data.clickCount,
+        route: parseResult.data.route,
+        steps: parseResult.data.steps,
+        challengeSnapshot: parseResult.data.challengeSnapshot,
+      },
+      { sessionUserId: session?.user?.id },
+    );
     return NextResponse.json(run, { status: 201 });
   } catch (error) {
     const apiError = asApiError(error);

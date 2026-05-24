@@ -27,8 +27,8 @@ const NAMED_DUMMY_PLAYERS = [
 
 const seeds = [
   { label: "Foundations", startTitle: "Internet", targetTitle: "Graph theory", difficultyScore: 42 },
-  { label: "Culture Shift", startTitle: "Jazz", targetTitle: "Machine learning", difficultyScore: 58 },
-  { label: "Space to Code", startTitle: "Mars", targetTitle: "TypeScript", difficultyScore: 66 },
+  { label: "Culture Shift", startTitle: "Music theory", targetTitle: "Machine learning", difficultyScore: 58 },
+  { label: "Space to Code", startTitle: "Space exploration", targetTitle: "Programming language", difficultyScore: 66 },
   { label: "Policy Sprint", startTitle: "Democracy", targetTitle: "Cryptography", difficultyScore: 71 },
   { label: "Deep Dive", startTitle: "Quantum mechanics", targetTitle: "Compiler", difficultyScore: 82 },
 ];

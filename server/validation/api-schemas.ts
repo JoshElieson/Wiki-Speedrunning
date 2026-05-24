@@ -1,3 +1,4 @@
+import { isValidGuestClientId } from "@/lib/guest-user";
 import { z } from "zod";
 import { DEFAULT_LEADERBOARD_SCOPE, LEADERBOARD_SCOPES } from "@/lib/leaderboard-scopes";
 import { SUPPORTED_WIKI_IDS, WIKI_MODE_IDS } from "@/lib/wiki-modes";
@@ -100,6 +101,14 @@ export const saveRunBodySchema = z
         code: z.ZodIssueCode.custom,
         path: ["clickCount"],
         message: `clickCount must match route transitions (${expectedClicks})`,
+      });
+    }
+
+    if (value.userId && !isValidGuestClientId(value.userId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["userId"],
+        message: "userId must be a valid guest profile id",
       });
     }
   });

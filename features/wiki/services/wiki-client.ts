@@ -13,6 +13,13 @@ export async function fetchArticle(title: string, modeId: WikiModeId = "wikipedi
   return fetchArticleForMode(resolveWikiModeId(modeId), title);
 }
 
+export function wikiArticleQueryKey(modeId: WikiModeId, title: string) {
+  const resolvedMode = resolveWikiModeId(modeId);
+  return ["wiki", resolvedMode, "article", normalizeTitle(title, resolvedMode)] as const;
+}
+
+export const WIKI_ARTICLE_STALE_TIME_MS = 5 * 60 * 1000;
+
 export function normalizeTitle(title: string, modeId: WikiModeId = "wikipedia"): string {
   return getWikiMode(resolveWikiModeId(modeId)).normalizePageTitle(title);
 }

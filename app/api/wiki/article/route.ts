@@ -29,7 +29,11 @@ export async function GET(request: Request) {
     const wikiId = getWikiModeId(parseResult.data.mode ?? parseResult.data.wikiId);
     const adapter = getEnabledWikiModeServerAdapter(wikiId);
     const article = await adapter.fetchArticleByTitle(parseResult.data.title);
-    return NextResponse.json(article);
+    return NextResponse.json(article, {
+      headers: {
+        "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
+      },
+    });
   } catch (error) {
     const apiError = asApiError(error);
     return NextResponse.json(
