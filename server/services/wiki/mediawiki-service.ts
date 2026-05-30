@@ -1,4 +1,5 @@
 import sanitizeHtml from "sanitize-html";
+import { EMBEDDED_WIKI_READER_SCROLL_FIX_CSS_MINIFIED } from "@/lib/wiki-reader/scroll-fix";
 import { REDIS_KEYS } from "@/db/constants";
 import { cache } from "@/server/cache/cache";
 import { ApiError } from "@/server/errors/api-error";
@@ -12,6 +13,31 @@ const ARTICLE_CACHE_TTL_SECONDS = 10 * 60;
 const LINKS_CACHE_TTL_SECONDS = 10 * 60;
 const WIKI_RENDER_CACHE_VERSION = "v11";
 const WIKI_STYLE_CACHE_TTL_SECONDS = 6 * 60 * 60;
+const MEDIAWIKI_USER_AGENT = "WikiRush/0.1 (wikipedia speedrunning game; +https://wikirush.app)";
+const MEDIAWIKI_FETCH_MAX_ATTEMPTS = 5;
+const WIKIPEDIA_RANDOM_BATCH_DELAY_MS = 150;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(retryAfter: string | null): number | null {
+  if (!retryAfter) {
+    return null;
+  }
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds)) {
+    return Math.max(0, seconds * 1000);
+  }
+
+  const retryAt = Date.parse(retryAfter);
+  if (Number.isFinite(retryAt)) {
+    return Math.max(0, retryAt - Date.now());
+  }
+
+  return null;
+}
 const stripDisambiguationSuffix = createStripDisambiguation();
 
 type MediaWikiPage = {
@@ -366,21 +392,40 @@ async function fetchMediaWikiJson<T extends MediaWikiQueryResponse | MediaWikiPa
   params: URLSearchParams,
 ): Promise<T> {
   const config = getWikiMode(modeId);
-  const response = await fetch(`${config.apiEndpoint}?${params.toString()}`, {
-    headers: { "User-Agent": "Wikipedia Speedrunning Ranked/1.0 (portfolio project)" },
-    next: { revalidate: ARTICLE_CACHE_TTL_SECONDS },
-  });
+  const url = `${config.apiEndpoint}?${params.toString()}`;
 
-  if (!response.ok) {
-    throw new ApiError(502, "MEDIAWIKI_HTTP_ERROR", `${config.displayName} API responded with ${response.status}`);
+  for (let attempt = 0; attempt < MEDIAWIKI_FETCH_MAX_ATTEMPTS; attempt += 1) {
+    const response = await fetch(url, {
+      headers: { "User-Agent": MEDIAWIKI_USER_AGENT },
+      next: { revalidate: ARTICLE_CACHE_TTL_SECONDS },
+    });
+
+    if (response.status === 429 && attempt < MEDIAWIKI_FETCH_MAX_ATTEMPTS - 1) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+      await sleep(retryAfterMs ?? Math.min(1000 * 2 ** attempt, 8000));
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new ApiError(502, "MEDIAWIKI_HTTP_ERROR", `${config.displayName} API responded with ${response.status}`);
+    }
+
+    const payload = (await response.json()) as T;
+    if (payload.error) {
+      const rateLimited =
+        payload.error.code === "ratelimited" || /rate limit/i.test(payload.error.info ?? "");
+      if (rateLimited && attempt < MEDIAWIKI_FETCH_MAX_ATTEMPTS - 1) {
+        await sleep(Math.min(1000 * 2 ** attempt, 8000));
+        continue;
+      }
+
+      throw new ApiError(502, "MEDIAWIKI_API_ERROR", payload.error.info, payload.error);
+    }
+
+    return payload;
   }
 
-  const payload = (await response.json()) as T;
-  if (payload.error) {
-    throw new ApiError(502, "MEDIAWIKI_API_ERROR", payload.error.info, payload.error);
-  }
-
-  return payload;
+  throw new ApiError(502, "MEDIAWIKI_HTTP_ERROR", `${config.displayName} API responded with 429`);
 }
 
 function rewriteFilepathUrls(modeId: WikiModeId, css: string): string {
@@ -423,7 +468,7 @@ async function fetchWikiSystemCss(modeId: WikiModeId): Promise<string> {
     return "";
   }
 
-  const stylesCacheKey = REDIS_KEYS.article(`${modeId}:styles:v5`);
+  const stylesCacheKey = REDIS_KEYS.article(`${modeId}:styles:v7`);
   const cachedStyles = await cache.get<string>(stylesCacheKey);
   if (cachedStyles) {
     return cachedStyles;
@@ -463,6 +508,7 @@ async function fetchWikiSystemCss(modeId: WikiModeId): Promise<string> {
     .join("\n\n");
   const rewrittenCss = rewriteFilepathUrls(modeId, mergedCss);
   const minecraftReaderOverrides = `
+${EMBEDDED_WIKI_READER_SCROLL_FIX_CSS_MINIFIED}
 .history-json,.chest-json,.chestcontents-json,.sound-json,.spawntable-json,.advancements-json,.achievements-json{display:none!important;}
 body.skin-vector{background-color:var(--base-background-color,#303030)!important;background-image:var(--header-background)!important;background-repeat:repeat-x!important;background-position:top left!important;background-size:auto 234px!important;}
 @media (-webkit-min-device-pixel-ratio:1.5),(min-resolution:1.5dppx){body.skin-vector{background-image:var(--header-background-hidpi,var(--header-background))!important;}}
@@ -522,6 +568,7 @@ body.skin-vector{background-color:var(--base-background-color,#303030)!important
 .mw-parser-output table.navbox{display:table!important;width:100%!important;}
 `;
   const leagueReaderOverrides = `
+${EMBEDDED_WIKI_READER_SCROLL_FIX_CSS_MINIFIED}
 .mw-editsection,.reference-edit,#game-nav,.onlymobile{display:none!important;}
 .mw-collapsible.mw-collapsed>.mw-collapsible-content,.mw-collapsible.mw-collapsed>.va-collapsible-content{display:none!important;}
 td.mw-collapsible.mw-collapsed>.mw-collapsible-content,th.mw-collapsible.mw-collapsed>.mw-collapsible-content{display:none!important;}
@@ -733,9 +780,13 @@ export async function fetchRandomWikiArticleTitles(modeId: WikiModeId, limit: nu
   const seen = new Set<string>();
   let rncontinue: string | undefined;
   let attempts = 0;
-  const maxAttempts = modeId === "wikipedia" ? 120 : 40;
+  const maxAttempts = Math.max(3, Math.ceil(boundedLimit / 500) + 2);
 
   while (titles.length < boundedLimit && attempts < maxAttempts) {
+    if (attempts > 0 && modeId === "wikipedia") {
+      await sleep(WIKIPEDIA_RANDOM_BATCH_DELAY_MS);
+    }
+
     attempts += 1;
     const remaining = boundedLimit - titles.length;
     const batchSize = Math.min(500, remaining);

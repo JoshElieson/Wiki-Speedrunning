@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useRef } from "react";
 import { extractInternalArticleTitle } from "@/features/wiki/services/wikiApi";
 import { getWikiMode, resolveWikiModeId, type WikiModeId } from "@/lib/wiki-modes";
+import {
+  EMBEDDED_WIKI_READER_SCROLL_FIX_CSS,
+  wikiModeNeedsReaderScrollFix,
+} from "@/lib/wiki-reader/scroll-fix";
 
 interface WikipediaArticleViewProps {
   wikiMode: WikiModeId;
@@ -34,6 +38,7 @@ export function WikipediaArticleView({
   const isLeagueMode = resolvedMode === "league";
   const isPokemonMode = resolvedMode === "pokemon";
   const isMinecraftMode = resolvedMode === "minecraft";
+  const needsReaderScrollFix = wikiModeNeedsReaderScrollFix(resolvedMode);
   const isFandomMode = /fandom\.com/i.test(wikiConfig.baseUrl);
   const iframeSandbox = isFandomMode
     ? "allow-same-origin allow-scripts"
@@ -356,6 +361,7 @@ export function WikipediaArticleView({
       : "";
     const leagueReaderCss = isLeagueMode
       ? `
+      ${EMBEDDED_WIKI_READER_SCROLL_FIX_CSS}
       html {
         background: #0a0e17;
       }
@@ -513,6 +519,7 @@ export function WikipediaArticleView({
       : "";
     const minecraftReaderCss = isMinecraftMode
       ? `
+      ${EMBEDDED_WIKI_READER_SCROLL_FIX_CSS}
       html {
         background: var(--base-background-color, #303030);
       }
@@ -1382,6 +1389,7 @@ export function WikipediaArticleView({
     ${pokemonChromeHtml}
     ${pageMainHtml}
     ${pokemonChromeFooter}
+    ${needsReaderScrollFix ? `<style id="wikirush-embedded-scroll-fix">${EMBEDDED_WIKI_READER_SCROLL_FIX_CSS}</style>` : ""}
     <script>
       (() => {
         const headingSelector = "h2, h3, h4, .mw-heading2 > h2, .mw-heading3 > h3, .mw-heading4 > h4";
@@ -2162,6 +2170,41 @@ export function WikipediaArticleView({
 
     frameWindow.scrollTo({ top: 0, left: 0 });
   }, [title, html]);
+
+  useEffect(() => {
+    if (!needsReaderScrollFix || isLoading) {
+      return;
+    }
+
+    const iframe = iframeRef.current;
+    if (!iframe) {
+      return;
+    }
+
+    const onWheel = (event: WheelEvent) => {
+      const doc = iframe.contentDocument;
+      if (!doc) {
+        return;
+      }
+
+      const scrollRoot = doc.documentElement;
+      const maxScroll = scrollRoot.scrollHeight - scrollRoot.clientHeight;
+      if (maxScroll <= 0) {
+        return;
+      }
+
+      const nextTop = Math.max(0, Math.min(maxScroll, scrollRoot.scrollTop + event.deltaY));
+      if (nextTop === scrollRoot.scrollTop) {
+        return;
+      }
+
+      scrollRoot.scrollTop = nextTop;
+      event.preventDefault();
+    };
+
+    iframe.addEventListener("wheel", onWheel, { passive: false });
+    return () => iframe.removeEventListener("wheel", onWheel);
+  }, [html, isLoading, needsReaderScrollFix, title]);
 
   return (
     <article

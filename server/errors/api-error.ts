@@ -12,6 +12,14 @@ export class ApiError extends Error {
   }
 }
 
+export function isRecoverableWikiApiError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) {
+    return false;
+  }
+
+  return error.code === "MEDIAWIKI_HTTP_ERROR" || error.code === "MEDIAWIKI_API_ERROR";
+}
+
 export function asApiError(error: unknown): ApiError {
   if (error instanceof ApiError) {
     return error;

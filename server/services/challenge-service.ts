@@ -2,7 +2,7 @@ import { REDIS_KEYS } from "@/db/constants";
 import { isDatabaseConfigured, isPrismaConfigError } from "@/lib/database";
 import { getWikiModeConfig, getWikiModeId, type WikiModeId } from "@/lib/wiki-modes";
 import { cache } from "@/server/cache/cache";
-import { ApiError } from "@/server/errors/api-error";
+import { ApiError, isRecoverableWikiApiError } from "@/server/errors/api-error";
 import { fetchRandomArticleTitlesForWiki } from "@/server/services/wiki/wiki-provider";
 import {
   createChallenge,
@@ -82,7 +82,8 @@ const DAILY_ARTICLE_POOL = [
 ];
 
 const DAILY_MODES: DailyChallengeMode[] = ["time", "clicks"];
-const GENERATED_POOL_SIZE = 10_000;
+const GENERATED_POOL_SIZE = 500;
+const GENERATED_POOL_MIN_CACHE_SIZE = 50;
 const GENERATED_POOL_TTL_SECONDS = 12 * 60 * 60;
 const POKEMON_FALLBACK_TITLES = [
   "Bulbasaur",
@@ -174,7 +175,7 @@ function uniqueFallbackTitles(): string[] {
 async function getGeneratedArticlePool(wikiId: WikiModeId): Promise<string[]> {
   const cacheKey = getGeneratedPoolCacheKey(wikiId);
   const cached = await cache.get<string[]>(cacheKey);
-  if (cached && cached.length >= 250) {
+  if (cached && cached.length >= GENERATED_POOL_MIN_CACHE_SIZE) {
     return cached;
   }
 
@@ -188,10 +189,18 @@ async function getGeneratedArticlePool(wikiId: WikiModeId): Promise<string[]> {
     return combined;
   } catch (error) {
     console.warn("[challenge-service] Failed to build generated title pool; using built-in fallback pool.", error);
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+
     const fallbackPool = uniqueFallbackTitlesForWiki(wikiId);
     await cache.set(cacheKey, fallbackPool, 5 * 60);
     return fallbackPool;
   }
+}
+
+function shouldFallbackFromGeneratedChallengeError(error: unknown): boolean {
+  return isPrismaConfigError(error) || isRecoverableWikiApiError(error);
 }
 
 function buildGeneratedChallengeFromPool(pool: string[], wikiId: WikiModeId): ChallengeDescriptor | null {
@@ -546,7 +555,7 @@ export async function getNextGeneratedChallenge(): Promise<ChallengeDescriptor> 
         return persisted;
       }
     } catch (error) {
-      if (!isPrismaConfigError(error) && process.env.NODE_ENV === "production") {
+      if (!shouldFallbackFromGeneratedChallengeError(error) && process.env.NODE_ENV === "production") {
         throw error;
       }
 
@@ -591,7 +600,7 @@ export async function getNextGeneratedChallengeForWiki(rawWikiId?: string | null
         return { ...created, wikiId };
       }
     } catch (error) {
-      if (!isPrismaConfigError(error) && process.env.NODE_ENV === "production") {
+      if (!shouldFallbackFromGeneratedChallengeError(error) && process.env.NODE_ENV === "production") {
         throw error;
       }
 
