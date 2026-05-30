@@ -40,6 +40,9 @@ body {
 #content,
 .vector-body,
 .vector-main,
+.mw-parser-output,
+.mw-content-ltr,
+.mw-content-rtl,
 main {
   height: auto !important;
   max-height: none !important;
@@ -55,8 +58,50 @@ export const EMBEDDED_WIKI_READER_SCROLL_FIX_CSS_MINIFIED = EMBEDDED_WIKI_READER
   .replace(/ ?([{}:;,]) ?/g, "$1")
   .trim();
 
-const MODES_WITH_EMBEDDED_SCROLL_FIX = new Set<WikiModeId>(["minecraft", "league"]);
+/** Modes that load Vector/Fandom wiki CSS which traps overflow inside the iframe. */
+const MODES_WITH_EMBEDDED_SCROLL_FIX = new Set<WikiModeId>([
+  "wikipedia",
+  "minecraft",
+  "league",
+  "marvel",
+  "star-wars",
+]);
 
 export function wikiModeNeedsReaderScrollFix(modeId: WikiModeId): boolean {
   return MODES_WITH_EMBEDDED_SCROLL_FIX.has(modeId);
+}
+
+export function getEmbeddedWikiReaderScrollRoot(doc: Document): HTMLElement {
+  const scrollingElement = doc.scrollingElement;
+  if (scrollingElement instanceof HTMLElement) {
+    return scrollingElement;
+  }
+
+  return doc.documentElement;
+}
+
+/** Applies wheel delta to the iframe scroll root. Returns true when scroll position changed. */
+export function applyEmbeddedWikiReaderWheelScroll(
+  event: WheelEvent,
+  scrollRoot: HTMLElement,
+): boolean {
+  const maxScroll = Math.max(0, scrollRoot.scrollHeight - scrollRoot.clientHeight);
+  if (maxScroll <= 0) {
+    return false;
+  }
+
+  let deltaY = event.deltaY;
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    deltaY *= 16;
+  } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    deltaY *= scrollRoot.clientHeight;
+  }
+
+  const nextTop = Math.max(0, Math.min(maxScroll, scrollRoot.scrollTop + deltaY));
+  if (nextTop === scrollRoot.scrollTop) {
+    return false;
+  }
+
+  scrollRoot.scrollTop = nextTop;
+  return true;
 }

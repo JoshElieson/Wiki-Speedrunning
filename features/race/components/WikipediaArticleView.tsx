@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef } from "react";
 import { extractInternalArticleTitle } from "@/features/wiki/services/wikiApi";
 import { getWikiMode, resolveWikiModeId, type WikiModeId } from "@/lib/wiki-modes";
 import {
+  applyEmbeddedWikiReaderWheelScroll,
   EMBEDDED_WIKI_READER_SCROLL_FIX_CSS,
+  getEmbeddedWikiReaderScrollRoot,
   wikiModeNeedsReaderScrollFix,
 } from "@/lib/wiki-reader/scroll-fix";
 
@@ -361,7 +363,6 @@ export function WikipediaArticleView({
       : "";
     const leagueReaderCss = isLeagueMode
       ? `
-      ${EMBEDDED_WIKI_READER_SCROLL_FIX_CSS}
       html {
         background: #0a0e17;
       }
@@ -519,7 +520,6 @@ export function WikipediaArticleView({
       : "";
     const minecraftReaderCss = isMinecraftMode
       ? `
-      ${EMBEDDED_WIKI_READER_SCROLL_FIX_CSS}
       html {
         background: var(--base-background-color, #303030);
       }
@@ -1356,6 +1356,7 @@ export function WikipediaArticleView({
       ${leagueReaderCss}
       ${minecraftReaderCss}
       ${pokemonReaderCss}
+      ${needsReaderScrollFix ? EMBEDDED_WIKI_READER_SCROLL_FIX_CSS : ""}
       @media (max-width: 640px) {
         body:not([data-wiki-mode="league"]):not([data-wiki-mode="pokemon"]) .page-layout {
           display: block;
@@ -2111,6 +2112,7 @@ export function WikipediaArticleView({
     isMarvelMode,
     isPokemonMode,
     isMinecraftMode,
+    needsReaderScrollFix,
     resolvedMode,
     title,
     wikiConfig.baseUrl,
@@ -2181,29 +2183,35 @@ export function WikipediaArticleView({
       return;
     }
 
-    const onWheel = (event: WheelEvent) => {
+    let cleanupWheel: (() => void) | undefined;
+
+    const bindWheel = () => {
+      cleanupWheel?.();
+      cleanupWheel = undefined;
+
+      const frameWindow = iframe.contentWindow;
       const doc = iframe.contentDocument;
-      if (!doc) {
+      if (!frameWindow || !doc) {
         return;
       }
 
-      const scrollRoot = doc.documentElement;
-      const maxScroll = scrollRoot.scrollHeight - scrollRoot.clientHeight;
-      if (maxScroll <= 0) {
-        return;
-      }
+      const onWheel = (event: WheelEvent) => {
+        const scrollRoot = getEmbeddedWikiReaderScrollRoot(doc);
+        if (applyEmbeddedWikiReaderWheelScroll(event, scrollRoot)) {
+          event.preventDefault();
+        }
+      };
 
-      const nextTop = Math.max(0, Math.min(maxScroll, scrollRoot.scrollTop + event.deltaY));
-      if (nextTop === scrollRoot.scrollTop) {
-        return;
-      }
-
-      scrollRoot.scrollTop = nextTop;
-      event.preventDefault();
+      frameWindow.addEventListener("wheel", onWheel, { passive: false, capture: true });
+      cleanupWheel = () => frameWindow.removeEventListener("wheel", onWheel, { capture: true });
     };
 
-    iframe.addEventListener("wheel", onWheel, { passive: false });
-    return () => iframe.removeEventListener("wheel", onWheel);
+    bindWheel();
+    iframe.addEventListener("load", bindWheel);
+    return () => {
+      iframe.removeEventListener("load", bindWheel);
+      cleanupWheel?.();
+    };
   }, [html, isLoading, needsReaderScrollFix, title]);
 
   return (

@@ -468,7 +468,7 @@ async function fetchWikiSystemCss(modeId: WikiModeId): Promise<string> {
     return "";
   }
 
-  const stylesCacheKey = REDIS_KEYS.article(`${modeId}:styles:v7`);
+  const stylesCacheKey = REDIS_KEYS.article(`${modeId}:styles:v8`);
   const cachedStyles = await cache.get<string>(stylesCacheKey);
   if (cachedStyles) {
     return cachedStyles;
@@ -543,6 +543,7 @@ body.skin-vector{background-color:var(--base-background-color,#303030)!important
 .collapsetoggle .jslink{cursor:pointer;color:#0645ad;}
 `;
   const marvelReaderOverrides = `
+${EMBEDDED_WIKI_READER_SCROLL_FIX_CSS_MINIFIED}
 .wds-global-navigation-wrapper,.wikia-ad,.ad-slot,.gpt-ad,.fandom-sticky-header-container,.mw-editsection,.reference-edit,.portable-infobox__edit{display:none!important;}
 .portable-infobox{float:right;clear:right;width:270px;max-width:min(340px,100%);margin:0 0 1em 1em;border:1px solid #ccc;background:#fff;font-size:0.875rem;line-height:1.45;box-shadow:0 1px 2px rgba(0,0,0,.08);}
 .portable-infobox .pi-secondary-background{background-color:#520008!important;color:#fff!important;}
